@@ -1,6 +1,6 @@
-﻿namespace HidWin.Helpers;
+﻿namespace HidWin.Exceptions;
 
-internal class HidException : Exception
+public class HidException : Exception
 {
     public HidException(){}
     public HidException(string message) : base(message){}
