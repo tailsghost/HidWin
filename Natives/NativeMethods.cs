@@ -1,24 +1,13 @@
-﻿using System.Runtime.InteropServices;
+﻿using HidWin.Enums;
 using Microsoft.Win32.SafeHandles;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+using System.Text;
 
 namespace HidWin.Natives;
 
 internal static class NativeMethods
 {
-    internal const uint GENERIC_READ = 0x80000000;
-    internal const uint GENERIC_WRITE = 0x40000000;
-    internal const uint FILE_SHARE_READ = 0x00000001;
-    internal const uint FILE_SHARE_WRITE = 0x00000002;
-    internal const uint OPEN_EXISTING = 3;
-    internal const uint FILE_FLAG_OVERLAPPED = 0x40000000;
-
-    internal const uint SPDRP_FRIENDLYNAME = 0x0000000C;
-
-    internal const int DIGCF_PRESENT = 0x00000002;
-    internal const int DIGCF_DEVICEINTERFACE = 0x00000010;
-
-    internal const int ERROR_IO_PENDING = 997;
-    internal const int ERROR_OPERATION_ABORTED = 995;
 
     [StructLayout(LayoutKind.Sequential)]
     internal struct HIDD_ATTRIBUTES
@@ -59,9 +48,10 @@ internal static class NativeMethods
         public int Flags;
         public IntPtr Reserved;
 
-        public SP_DEVICE_INTERFACE_DATA()
+        public SP_DEVICE_INTERFACE_DATA SetCbSize()
         {
             cbSize = Marshal.SizeOf(this);
+            return this;
         }
     }
 
@@ -73,9 +63,10 @@ internal static class NativeMethods
         public int DevInst;
         public IntPtr Reserved;
 
-        public SP_DEVINFO_DATA()
+        public SP_DEVINFO_DATA SetCbSize()
         {
             cbSize = Marshal.SizeOf(this);
+            return this;
         }
     }
 
@@ -87,9 +78,145 @@ internal static class NativeMethods
         public string DevicePath;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    public struct DCB
+    {
+        public int DCBlength;
+        public uint BaudRate;
+        public uint fFlags;
+
+        public bool fBinary
+        {
+            get => GetBool(0);
+            set => SetBool(0, value);
+        }
+
+        public bool fParity
+        {
+            get => GetBool(1);
+            set => SetBool(1, value);
+        }
+
+        public bool fOutxCtsFlow
+        {
+            get => GetBool(2);
+            set => SetBool(2, value);
+        }
+
+        public bool fOutxDsrFlow
+        {
+            get => GetBool(3);
+            set => SetBool(3, value);
+        }
+
+        public uint fDtrControl
+        {
+            get => GetBits(4, 2);
+            set => SetBits(4, 2, value);
+        }
+
+        public bool fDsrSensitivity
+        {
+            get => GetBool(6);
+            set => SetBool(6, value);
+        }
+
+        public bool fTXContinueOnXoff
+        {
+            get => GetBool(7);
+            set => SetBool(7, value);
+        }
+
+        public bool fOutX
+        {
+            get => GetBool(8);
+            set => SetBool(8, value);
+        }
+
+        public bool fInX
+        {
+            get => GetBool(9);
+            set => SetBool(9, value);
+        }
+
+        public bool fErrorChar
+        {
+            get => GetBool(10);
+            set => SetBool(10, value);
+        }
+        public bool fNull
+        {
+            get => GetBool(11);
+            set => SetBool(11, value);
+        }
+        public uint fRtsControl
+        {
+            get => GetBits(12, 2);
+            set => SetBits(12, 2, value);
+        }
+        public bool fAbortOnError
+        {
+            get => GetBool(14);
+            set => SetBool(14, value);
+        }
+
+        ushort Reserved1;
+        public ushort XonLim;
+        public ushort XoffLim;
+        public byte ByteSize;
+        public byte Parity;
+        public byte StopBits;
+        public byte XonChar;
+        public byte XoffChar;
+        public byte ErrorChar;
+        public byte EofChar;
+        public byte EvtChar;
+        ushort Reserved2;
+
+        private uint GetBitMask(int bitCount)
+        {
+            return (1u << bitCount) - 1;
+        }
+
+        private uint GetBits(int bitOffset, int bitCount)
+        {
+            return (fFlags >> bitOffset) & GetBitMask(bitCount);
+        }
+
+        private void SetBits(int bitOffset, int bitCount, uint value)
+        {
+            var mask = GetBitMask(bitCount);
+            fFlags &= ~(mask << bitOffset);
+            fFlags |= (value & mask) << bitOffset;
+        }
+
+        private bool GetBool(int bitOffset)
+        {
+            return GetBits(bitOffset, 1) != 0;
+        }
+
+        private void SetBool(int bitOffset, bool value)
+        {
+            SetBits(bitOffset, 1, value ? 1u : 0);
+        }
+    }
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool SetCommState(IntPtr handle, ref DCB dcb);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool GetCommState(IntPtr handle, ref DCB dcb);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool PurgeComm(IntPtr handle, uint flags);
+
+
 
     [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Auto)]
-    internal static extern SafeFileHandle CreateFile(
+    internal static extern IntPtr CreateFile(
         string fileName,
         uint dwDesiredAccess,
         uint dwShareMode,
@@ -118,6 +245,24 @@ internal static class NativeMethods
     internal static extern unsafe bool CancelIoEx(
         SafeFileHandle hFile,
         NativeOverlapped* lpOverlapped);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool CloseHandle(IntPtr handle);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public unsafe static extern bool ReadFile(IntPtr handle, byte* buffer, int bytesToRead,
+        IntPtr bytesRead, NativeOverlapped* overlapped);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public unsafe static extern bool WriteFile(IntPtr handle, byte* buffer, int bytesToWrite,
+        IntPtr bytesWritten, NativeOverlapped* overlapped);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool CancelIo(IntPtr handle);
 
     [DllImport("hid.dll", SetLastError = true)]
     internal static extern void HidD_GetHidGuid(out Guid guid);
@@ -158,5 +303,109 @@ internal static class NativeMethods
 
     [DllImport("setupapi.dll", SetLastError = true)]
     internal static extern bool SetupDiDestroyDeviceInfoList(IntPtr deviceInfoSet);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public unsafe static extern uint WaitForMultipleObjects(uint count, IntPtr* handles,
+        [MarshalAs(UnmanagedType.Bool)] bool waitAll, uint milliseconds);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern unsafe bool GetOverlappedResult(IntPtr handle,
+        NativeOverlapped* overlapped, out uint bytesTransferred,
+        [MarshalAs(UnmanagedType.Bool)] bool wait);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern IntPtr CreateEvent(IntPtr eventAttributes,
+        [MarshalAs(UnmanagedType.Bool)] bool manualReset,
+        [MarshalAs(UnmanagedType.Bool)] bool initialState,
+        IntPtr name);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool SetEvent(IntPtr handle);
+
+    [DllImport("setupapi.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    internal static extern bool SetupDiGetDeviceInstanceId(
+        IntPtr DeviceInfoSet,
+        ref SP_DEVINFO_DATA DeviceInfoData,
+        StringBuilder DeviceInstanceId,
+        int DeviceInstanceIdSize,
+        out int RequiredSize
+    );
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    internal static extern bool GetVolumeInformation(
+        string rootPathName,
+        StringBuilder volumeNameBuffer,
+        uint volumeNameSize,
+        out uint volumeSerialNumber,
+        out uint maximumComponentLength,
+        out uint fileSystemFlags,
+        StringBuilder fileSystemNameBuffer,
+        uint fileSystemNameSize
+    );
+
+    public static uint WaitForMultipleObjectsGetTimeout(int eventTimeout)
+    {
+        return eventTimeout < 0 ? ~(uint)0 : (uint)eventTimeout;
+    }
+
+
+    public static unsafe void OverlappedOperation(IntPtr ioHandle,
+        IntPtr eventHandle, int eventTimeout, IntPtr closeEventHandle,
+        bool overlapResult,
+        NativeOverlapped* overlapped, out uint bytesTransferred)
+    {
+        var closed = false;
+
+        WinError win32Error = 0;
+
+        if (!overlapResult)
+        {
+            win32Error = (WinError)Marshal.GetLastWin32Error();
+            if (win32Error != WinError.ERROR_IO_PENDING)
+            {
+                var ex = new Win32Exception();
+                throw new IOException($"Operation failed early: {ex.Message}", ex);
+            }
+
+            var handles = stackalloc IntPtr[2];
+            handles[0] = eventHandle; handles[1] = closeEventHandle;
+            var waitResult = WaitForMultipleObjects(2, handles, false, WaitForMultipleObjectsGetTimeout(eventTimeout));
+            switch ((WaitObject)waitResult)
+            {
+                case WaitObject.WAIT_OBJECT_0: break;
+                case WaitObject.WAIT_OBJECT_1: closed = true; goto default;
+                default: CancelIo(ioHandle); break;
+            }
+        }
+
+        if (GetOverlappedResult(ioHandle, overlapped, out bytesTransferred, true)) return;
+
+        win32Error = (WinError)Marshal.GetLastWin32Error();
+        if (win32Error != WinError.ERROR_HANDLE_EOF)
+        {
+            if (closed)
+            {
+                throw new ObjectDisposedException("Closed.");
+            }
+
+            if (win32Error == WinError.ERROR_OPERATION_ABORTED)
+            {
+                throw new TimeoutException("Operation timed out.");
+            }
+
+            throw new IOException("Operation failed after some time.", new Win32Exception());
+        }
+
+        bytesTransferred = 0;
+    }
+
+
+    public static IntPtr CreateResetEventOrThrow(bool manualReset)
+    {
+        var @event = CreateEvent(IntPtr.Zero, manualReset, false, IntPtr.Zero);
+        if (@event == IntPtr.Zero) { throw new IOException("Event creation failed."); }
+        return @event;
+    }
 }
 

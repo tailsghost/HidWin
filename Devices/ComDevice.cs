@@ -2,9 +2,17 @@
 
 namespace HidWin.Devices;
 
-public sealed class ComDevice() : Device(DeviceKind.Com)
+public sealed class ComDevice : Device
 {
-    public string PortName { get; init; } = string.Empty;
-    public int BaudRate { get; init; } = 115200;
+    public string DeviceId { get; init; }
+    public string FileSystemName { get; init; }
+    public string FriendlyName { get; init; }
+
+    public string PortName { get; init; }
+
+    public ComDevice() : base(DeviceKind.Com)
+    {
+        
+    }
 }
 

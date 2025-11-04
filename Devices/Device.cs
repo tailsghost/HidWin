@@ -3,15 +3,20 @@ using HidWin.Streams;
 
 namespace HidWin.Devices;
 
-public abstract class Device(DeviceKind kind)
+public abstract class Device
 {
     private DeviceStream? _stream;
 
-    public DeviceKind Kind { get; } = kind;
-    public string DevicePath { get; init; } = string.Empty;
+    public DeviceKind Kind { get; }
+    public string DevicePath { get; init; }
     public string? Name { get; init; }
     public ushort VendorId { get; init; }
     public ushort ProductId { get; init; }
+
+    protected Device(DeviceKind kind)
+    {
+        Kind = kind;
+    }
 
     public DeviceStream Open()
     {
@@ -44,6 +49,7 @@ public abstract class Device(DeviceKind kind)
 
     public void Close()
     {
+        _stream.Close();
         _stream?.Dispose();
         _stream = null;
     }

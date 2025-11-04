@@ -13,6 +13,18 @@ public static class Throw
                 throw new ArgumentNullException(paramName);
             }
         }
+
+        public static void OutOfRange(int bufferSize, int offset, int count)
+        {
+            if (offset < 0 || offset > bufferSize) { throw new ArgumentOutOfRangeException("offset"); }
+            if (count < 0 || count > bufferSize - offset) { throw new ArgumentOutOfRangeException("count"); }
+        }
+
+        public static void OutOfRange<T>(IList<T> buffer, int offset, int count)
+        {
+            Null(buffer, "buffer");
+            OutOfRange(buffer.Count, offset, count);
+        }
     }
 
     public static class Handle

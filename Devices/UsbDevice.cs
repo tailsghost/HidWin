@@ -2,7 +2,11 @@
 
 namespace HidWin.Devices;
 
-public sealed class UsbDevice() : Device(DeviceKind.Usb)
+public sealed class UsbDevice : Device
 {
+    public UsbDevice() : base(DeviceKind.Usb)
+    {
+
+    }
 }
 
