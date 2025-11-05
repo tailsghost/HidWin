@@ -73,9 +73,11 @@ public static class DeviceEnumerator
                 var devInfoPtr = Marshal.AllocHGlobal(devInfoData.cbSize);
                 Marshal.StructureToPtr(devInfoData, devInfoPtr, false);
                 var detailBuffer = Marshal.AllocHGlobal(requiredSize);
+
+                var cbSize = (IntPtr.Size == 8) ? 8 : 6;
                 try
                 {
-                    Marshal.WriteInt32(detailBuffer, IntPtr.Size);
+                    Marshal.WriteInt32(detailBuffer, cbSize);
                     if (!NativeMethods.SetupDiGetDeviceInterfaceDetail(devInfo, ref deviceInterfaceData, detailBuffer,
                             requiredSize, out _, devInfoPtr))
                     {
@@ -83,7 +85,7 @@ public static class DeviceEnumerator
                         continue;
                     }
 
-                    var devicePathPtr = IntPtr.Add(detailBuffer, IntPtr.Size);
+                    var devicePathPtr = IntPtr.Add(detailBuffer, cbSize);
                     var devicePath = Marshal.PtrToStringUni(devicePathPtr) ?? string.Empty;
                     if (string.IsNullOrEmpty(devicePath))
                     {
@@ -91,22 +93,17 @@ public static class DeviceEnumerator
                         continue;
                     }
 
-                    if (devicePath.StartsWith("?\\"))
+                    if (devicePath.StartsWith("\\?\\"))
+                        devicePath = "\\\\?\\" + devicePath.Substring(3);
+                    else if(devicePath.StartsWith("?\\"))
                         devicePath = "\\\\?\\" + devicePath.Substring(2);
 
                     var handle = IntPtr.Zero;
 
                     try
                     {
-                        handle = NativeMethods.CreateFile(
-                            devicePath,
-                            (uint)FileAccessMode.GENERIC_READ,
-                            (uint)(FileShareMode.FILE_SHARE_READ | FileShareMode.FILE_SHARE_WRITE),
-                            IntPtr.Zero,
-                            (uint)(FileCreationDisposition.OPEN_EXISTING),
-                            0,
-                            IntPtr.Zero
-                        );
+                        handle = NativeMethods.CreateFileFromDevice(devicePath, FileAccessMode.GENERIC_READ,
+                            FileShareMode.FILE_SHARE_READ | FileShareMode.FILE_SHARE_WRITE);
 
                         var attrs = new NativeMethods.HIDD_ATTRIBUTES
                         {
@@ -189,9 +186,12 @@ public static class DeviceEnumerator
 
                 var detailBuffer = Marshal.AllocHGlobal(requiredSize);
                 var devInfoDataPtr = IntPtr.Zero;
+
+                var cbSize = (IntPtr.Size == 8) ? 8 : 6;
+
                 try
                 {
-                    Marshal.WriteInt32(detailBuffer, 8);
+                    Marshal.WriteInt32(detailBuffer, cbSize);
 
                     if (!NativeMethods.SetupDiGetDeviceInterfaceDetail(devInfo, ref ifaceData, detailBuffer, requiredSize, out _, IntPtr.Zero))
                     {
@@ -199,10 +199,12 @@ public static class DeviceEnumerator
                         continue;
                     }
 
-                    var pDevicePath = IntPtr.Add(detailBuffer, 8);
+                    var pDevicePath = IntPtr.Add(detailBuffer, cbSize);
                     var devicePath = Marshal.PtrToStringUni(pDevicePath) ?? string.Empty;
                     if (devicePath.StartsWith("?\\"))
                         devicePath = "\\\\?\\" + devicePath.Substring(2);
+                    else if (devicePath.StartsWith("\\?\\"))
+                        devicePath = "\\\\?\\" + devicePath.Substring(3);
 
                     var devInfoDataSize = Marshal.SizeOf<NativeMethods.SP_DEVINFO_DATA>();
                     devInfoDataPtr = Marshal.AllocHGlobal(devInfoDataSize);
@@ -246,20 +248,19 @@ public static class DeviceEnumerator
                                 }
 
                                 var parts = hwIds.Split(new[] { '\0' }, StringSplitOptions.RemoveEmptyEntries);
-                                var vidpidRegex = new System.Text.RegularExpressions.Regex(@"VID_([0-9A-Fa-f]{4}).*PID_([0-9A-Fa-f]{4})", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                                var vidpidRegex = new Regex(@"VID_([0-9A-Fa-f]{4}).*PID_([0-9A-Fa-f]{4})",
+                                    RegexOptions.IgnoreCase);
                                 foreach (var part in parts)
                                 {
                                     var m = vidpidRegex.Match(part);
-                                    if (m.Success)
+                                    if (!m.Success) continue;
+                                    if (ushort.TryParse(m.Groups[1].Value, System.Globalization.NumberStyles.HexNumber, null, out var v) &&
+                                        ushort.TryParse(m.Groups[2].Value, System.Globalization.NumberStyles.HexNumber, null, out var p))
                                     {
-                                        if (ushort.TryParse(m.Groups[1].Value, System.Globalization.NumberStyles.HexNumber, null, out var v) &&
-                                            ushort.TryParse(m.Groups[2].Value, System.Globalization.NumberStyles.HexNumber, null, out var p))
-                                        {
-                                            vendor = v;
-                                            product = p;
-                                            haveVidPid = true;
-                                            break;
-                                        }
+                                        vendor = v;
+                                        product = p;
+                                        haveVidPid = true;
+                                        break;
                                     }
                                 }
                             }
@@ -401,17 +402,19 @@ public static class DeviceEnumerator
                     }
                 }
 
+                var cbSize = (IntPtr.Size == 8) ? 8 : 6;
+
                 var detailDataBuffer = Marshal.AllocHGlobal(requiredSize);
                 try
                 {
-                    Marshal.WriteInt32(detailDataBuffer, 8);
+                    Marshal.WriteInt32(detailDataBuffer, cbSize);
                     if (!NativeMethods.SetupDiGetDeviceInterfaceDetail(devInfo, ref deviceInterfaceData, detailDataBuffer, requiredSize, out _, IntPtr.Zero))
                     {
                         index++;
                         continue;
                     }
 
-                    var devicePathPtr = IntPtr.Add(detailDataBuffer, 8);
+                    var devicePathPtr = IntPtr.Add(detailDataBuffer, cbSize);
                     var devicePath = Marshal.PtrToStringUni(devicePathPtr) ?? string.Empty;
                     if (string.IsNullOrEmpty(devicePath))
                     {

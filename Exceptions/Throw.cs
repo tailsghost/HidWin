@@ -32,7 +32,7 @@ public static class Throw
         public static void Invalid(IntPtr handle, string paramName)
         {
             If.Null(handle, $"{paramName} null");
-            if (handle == -1)
+            if (handle == (IntPtr)(-1))
                 throw new IOException(paramName);
         }
     }
