@@ -2,6 +2,7 @@
 
 internal enum SetupDiProperty : uint
 {
-    SPDRP_FRIENDLYNAME = 0x0000000C
+    SPDRP_FRIENDLYNAME = 0x0000000C,
+    SPDRP_HARDWAREID = 1
 }
 

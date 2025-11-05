@@ -5,7 +5,7 @@ namespace HidWin.Devices;
 
 public abstract class Device
 {
-    private DeviceStream? _stream;
+    protected DeviceStream? Stream;
 
     public DeviceKind Kind { get; }
     public string DevicePath { get; init; }
@@ -18,17 +18,17 @@ public abstract class Device
         Kind = kind;
     }
 
-    public DeviceStream Open()
+    public virtual DeviceStream Open()
     {
-        if(_stream != null) return _stream;
-        _stream = Kind switch
+        if(Stream != null) return Stream;
+        Stream = Kind switch
         {
             DeviceKind.Hid => new HidStream(DevicePath),
             DeviceKind.Usb => new UsbStream(DevicePath),
             DeviceKind.Com => new ComStream(DevicePath),
             _ => throw new NotSupportedException($"Device kind {Kind} is not supported.")
         };
-        return _stream;
+        return Stream;
     }
 
     public bool TryOpen(out DeviceStream? stream)
@@ -47,11 +47,11 @@ public abstract class Device
         return true;
     }
 
-    public void Close()
+    public virtual void Close()
     {
-        _stream.Close();
-        _stream?.Dispose();
-        _stream = null;
+        Stream?.Close();
+        Stream?.Dispose();
+        Stream = null;
     }
 
     public override string ToString() => $"{Kind} {VendorId:X4}:{ProductId:X4}";

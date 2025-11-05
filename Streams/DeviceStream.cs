@@ -1,4 +1,5 @@
 ﻿using HidWin.Core;
+using HidWin.Natives;
 
 namespace HidWin.Streams;
 
@@ -27,6 +28,22 @@ public abstract unsafe class DeviceStream : Stream
 
     protected IntPtr Handle;
     protected IntPtr CloseEventHandle;
+
+    public bool IsValidHandle => Handle != IntPtr.Zero && Handle.ToInt64() !=-1;
+
+    public bool TryGetString(Func<IntPtr, char[], int, bool> callback, out string value)
+    {
+        value = string.Empty;
+        return IsValidHandle && NativeMethods.TryGetDeviceString(Handle, callback, out value);
+    }
+
+    public bool TryGetCaps(Func<NativeMethods.HIDP_CAPS, ushort> callback, out ushort value)
+    {
+        value = 0;
+        if (!IsValidHandle) return false;
+        value = NativeMethods.TryGetCaps(Handle, callback);
+        return true;
+    }
 
 
     private void CurrentDomainOnProcessExit(object? sender, EventArgs e)

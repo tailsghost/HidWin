@@ -1,7 +1,8 @@
-﻿using HidWin.Exceptions;
+﻿using HidWin.Enums;
+using HidWin.Exceptions;
 using HidWin.Natives;
+using System.IO;
 using System.Runtime.InteropServices;
-using HidWin.Enums;
 
 namespace HidWin.Streams;
 
@@ -78,16 +79,14 @@ public sealed class ComStream : DeviceStream
 
     public ComStream(string port)
     {
-        Handle = NativeMethods.CreateFile(
+        Handle = NativeMethods.CreateFileFromDevice(
             port,
-            (uint)(FileAccessMode.GENERIC_READ | FileAccessMode.GENERIC_WRITE),
-            (uint)FileShareMode.NONE,
-            IntPtr.Zero,
-            (uint)FileCreationDisposition.OPEN_EXISTING,
-            (uint)(FileFlags.FILE_FLAG_DEVICE | FileFlags.FILE_FLAG_OVERLAPPED),
-            IntPtr.Zero
+            FileAccessMode.GENERIC_READ | FileAccessMode.GENERIC_WRITE,
+            FileShareMode.FILE_SHARE_READ | FileShareMode.FILE_SHARE_WRITE
         );
         CloseEventHandle = NativeMethods.CreateResetEventOrThrow(true);
+
+        Throw.Handle.Invalid(Handle, "Unable to open COM class device (" + port + ").");
 
         BaudRate = 9600;
         DataBits = 8;
@@ -119,7 +118,7 @@ public sealed class ComStream : DeviceStream
 
     protected override unsafe int DeviceRead(byte[] buffer, int offset, int count)
     {
-        Throw.If.OutOfRange(buffer, offset, count);
+        Throw.OutOfRange(buffer, offset, count);
 
         var @event = NativeMethods.CreateResetEventOrThrow(true);
         HandleAcquireIfOpenOrFail();
@@ -146,7 +145,7 @@ public sealed class ComStream : DeviceStream
 
     protected override unsafe void DeviceWrite(byte[] buffer, int offset, int count)
     {
-        Throw.If.OutOfRange(buffer, offset, count);
+        Throw.OutOfRange(buffer, offset, count);
 
         var @event = NativeMethods.CreateResetEventOrThrow(true);
 
@@ -172,7 +171,7 @@ public sealed class ComStream : DeviceStream
         }
     }
 
-    void UpdateSettings()
+    private void UpdateSettings()
     {
 
         if (!_settingsChanged) { return; }
@@ -202,8 +201,6 @@ public sealed class ComStream : DeviceStream
         if (NativeMethods.PurgeComm(Handle, (uint)purgeFlags)) return;
 
         throw new IOException("Failed to purge serial port.", Marshal.GetHRForLastWin32Error());
-
-
     }
 
     private void SetDcb(ref NativeMethods.DCB dcb)
@@ -212,7 +209,7 @@ public sealed class ComStream : DeviceStream
         dcb.fBinary = true;
     }
 
-    internal bool HandleClose()
+    private bool HandleClose()
     {
         return 0 == Interlocked.CompareExchange(ref _closed, 1, 0) && _opened != 0;
     }
@@ -228,7 +225,7 @@ public sealed class ComStream : DeviceStream
         base.Dispose(disposing);
     }
 
-    internal void HandleAcquireIfOpenOrFail()
+    private void HandleAcquireIfOpenOrFail()
     {
         if (_closed != 0 || !HandleAcquire()) { throw new ObjectDisposedException("Closed."); }
     }
@@ -238,7 +235,10 @@ public sealed class ComStream : DeviceStream
         while (true)
         {
             var refCount = _refCount;
-            if (refCount == 0) { return false; }
+            if (refCount == 0)
+            {
+                return false;
+            }
 
             if (refCount == Interlocked.CompareExchange
                     (ref _refCount, refCount + 1, refCount))

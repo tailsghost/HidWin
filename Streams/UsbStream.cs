@@ -8,13 +8,13 @@ public sealed class UsbStream : DeviceStream
 {
     public UsbStream(string path)
     {
-        Handle = NativeMethods.CreateFile(path,
-            (uint)(FileAccessMode.GENERIC_READ | FileAccessMode.GENERIC_WRITE),
-            (uint)(FileShareMode.FILE_SHARE_READ | FileShareMode.FILE_SHARE_WRITE),
-            IntPtr.Zero,
-            (uint)FileCreationDisposition.OPEN_EXISTING,
-            (uint)FileFlags.FILE_FLAG_OVERLAPPED,
-            IntPtr.Zero);
+        Handle = NativeMethods.CreateFileFromDevice(
+            path,
+            FileAccessMode.GENERIC_READ | FileAccessMode.GENERIC_WRITE,
+            FileShareMode.FILE_SHARE_READ | FileShareMode.FILE_SHARE_WRITE
+        );
+
+        Throw.Handle.Invalid(Handle, "Unable to open USB class device (" + path + ").");
 
         CloseEventHandle = NativeMethods.CreateResetEventOrThrow(true);
     }

@@ -1,4 +1,8 @@
 ﻿using HidWin.Enums;
+using HidWin.Natives;
+using System.Runtime.InteropServices;
+using System.Text;
+using System.Text.RegularExpressions;
 
 namespace HidWin.Devices;
 
@@ -12,7 +16,7 @@ public sealed class ComDevice : Device
 
     public ComDevice() : base(DeviceKind.Com)
     {
-        
     }
+
 }
 
