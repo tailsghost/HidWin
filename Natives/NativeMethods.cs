@@ -228,20 +228,22 @@ public static class NativeMethods
         IntPtr hTemplateFile);
 
     [DllImport("kernel32.dll", SetLastError = true)]
-    internal static extern unsafe bool ReadFile(
-        SafeFileHandle hFile,
-        byte[] lpBuffer,
-        uint nNumberOfBytesToRead,
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool ReadFile(
+        IntPtr hFile,
+        [Out] byte[] lpBuffer,
+        int nNumberOfBytesToRead,
         out uint lpNumberOfBytesRead,
-        NativeOverlapped* lpOverlapped);
+        IntPtr lpOverlapped);
 
     [DllImport("kernel32.dll", SetLastError = true)]
-    internal static extern unsafe bool WriteFile(
-        SafeFileHandle hFile,
-        byte[] lpBuffer,
-        uint nNumberOfBytesToWrite,
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool WriteFile(
+        IntPtr hFile,
+        [In] byte[] lpBuffer,
+        int nNumberOfBytesToWrite,
         out uint lpNumberOfBytesWritten,
-        NativeOverlapped* lpOverlapped);
+        IntPtr lpOverlapped);
 
     [DllImport("kernel32.dll", SetLastError = true)]
     internal static extern unsafe bool CancelIoEx(
@@ -328,13 +330,13 @@ public static class NativeMethods
     [DllImport("setupapi.dll", SetLastError = true)]
     internal static extern bool SetupDiDestroyDeviceInfoList(IntPtr deviceInfoSet);
     [DllImport("kernel32.dll", SetLastError = true)]
-    public static extern unsafe uint WaitForMultipleObjects(uint count, IntPtr* handles,
+    public static extern unsafe uint WaitForMultipleObjects(uint count, IntPtr[] handles,
         [MarshalAs(UnmanagedType.Bool)] bool waitAll, uint milliseconds);
 
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern unsafe bool GetOverlappedResult(IntPtr handle,
-        NativeOverlapped* overlapped, out uint bytesTransferred,
+        IntPtr overlapped, out uint bytesTransferred,
         [MarshalAs(UnmanagedType.Bool)] bool wait);
 
     [DllImport("kernel32.dll", SetLastError = true)]
@@ -377,56 +379,68 @@ public static class NativeMethods
     {
         return CreateFile(filename, (uint)desiredAccess, (uint)shareMode, IntPtr.Zero,
             (uint)FileCreationDisposition.OPEN_EXISTING,
-            (uint)(FileFlags.FILE_FLAG_DEVICE | FileFlags.FILE_FLAG_OVERLAPPED),
+            (uint)FileFlags.FILE_FLAG_OVERLAPPED,
             IntPtr.Zero);
     }
 
 
-    public static unsafe void OverlappedOperation(IntPtr ioHandle,
-        IntPtr eventHandle, int eventTimeout, IntPtr closeEventHandle,
+    public static void OverlappedOperation(
+        IntPtr ioHandle,
+        IntPtr eventHandle,
+        int eventTimeout,
+        IntPtr closeEventHandle,
         bool overlapResult,
-        NativeOverlapped* overlapped, out uint bytesTransferred)
+        IntPtr overlappedPtr,
+        out uint bytesTransferred)
     {
         var closed = false;
-
-        WinError win32Error = 0;
+        bytesTransferred = 0;
 
         if (!overlapResult)
         {
-            win32Error = (WinError)Marshal.GetLastWin32Error();
-            if (win32Error != WinError.ERROR_IO_PENDING)
+            var err = Marshal.GetLastWin32Error();
+            if (err != (int)WinError.ERROR_IO_PENDING)
             {
-                var ex = new Win32Exception();
-                throw new IOException($"Operation failed early: {ex.Message}", ex);
+                throw new IOException($"Operation failed early: {new Win32Exception(err).Message} - {err}");
             }
 
-            var handles = stackalloc IntPtr[2];
-            handles[0] = eventHandle; handles[1] = closeEventHandle;
-            var waitResult = WaitForMultipleObjects(2, handles, false, WaitForMultipleObjectsGetTimeout(eventTimeout));
-            switch ((WaitObject)waitResult)
+            var handles = closeEventHandle != IntPtr.Zero ? new[] { eventHandle, closeEventHandle } : new[] { eventHandle };
+
+            var waitMillis = WaitForMultipleObjectsGetTimeout(eventTimeout);
+
+            var waitResult = WaitForMultipleObjects((uint)handles.Length, handles, false, waitMillis);
+
+            switch (waitResult)
             {
-                case WaitObject.WAIT_OBJECT_0: break;
-                case WaitObject.WAIT_OBJECT_1: closed = true; goto default;
-                default: CancelIo(ioHandle); break;
+                case 0:
+                    break;
+                case 1 when handles.Length >= 2:
+                    closed = true;
+                    break;
+                default:
+                    CancelIo(ioHandle);
+                    break;
             }
         }
 
-        if (GetOverlappedResult(ioHandle, overlapped, out bytesTransferred, true)) return;
+        if (GetOverlappedResult(ioHandle, overlappedPtr, out bytesTransferred, true))
+            return;
+        
 
-        win32Error = (WinError)Marshal.GetLastWin32Error();
-        if (win32Error != WinError.ERROR_HANDLE_EOF)
+        var finalErr = Marshal.GetLastWin32Error();
+        if (finalErr != (int)WinError.ERROR_HANDLE_EOF)
         {
             if (closed)
             {
                 throw new ObjectDisposedException("Closed.");
             }
 
-            if (win32Error == WinError.ERROR_OPERATION_ABORTED)
+            if (finalErr == (int)WinError.ERROR_OPERATION_ABORTED)
             {
                 throw new TimeoutException("Operation timed out.");
             }
 
-            throw new IOException("Operation failed after some time.", new Win32Exception());
+            throw new IOException("Operation failed after some time.", new Win32Exception(finalErr));
         }
 
         bytesTransferred = 0;

@@ -2,8 +2,7 @@
 
 public enum DeviceKind
 {
-    Com,
-    Usb,
+    Serial,
     Hid
 }
 

@@ -6,7 +6,7 @@ using System.Runtime.InteropServices;
 
 namespace HidWin.Streams;
 
-public sealed class ComStream : DeviceStream
+public sealed class SerialStream : DeviceStream
 {
     private int _opened;
     private int _closed;
@@ -77,13 +77,14 @@ public sealed class ComStream : DeviceStream
         }
     }
 
-    public ComStream(string port)
+    public SerialStream(string port)
     {
         Handle = NativeMethods.CreateFileFromDevice(
             port,
             FileAccessMode.GENERIC_READ | FileAccessMode.GENERIC_WRITE,
             FileShareMode.FILE_SHARE_READ | FileShareMode.FILE_SHARE_WRITE
         );
+
         CloseEventHandle = NativeMethods.CreateResetEventOrThrow(true);
 
         Throw.Handle.Invalid(Handle, "Unable to open COM class device (" + port + ").");
@@ -116,58 +117,74 @@ public sealed class ComStream : DeviceStream
     }
 
 
-    protected override unsafe int DeviceRead(byte[] buffer, int offset, int count)
+    protected override int DeviceRead(byte[] buffer, int offset, int count)
     {
         Throw.OutOfRange(buffer, offset, count);
 
-        var @event = NativeMethods.CreateResetEventOrThrow(true);
+        var evt = NativeMethods.CreateResetEventOrThrow(true);
+        var pOverlapped = IntPtr.Zero;
+
         HandleAcquireIfOpenOrFail();
         UpdateSettings();
+
         try
         {
-            fixed (byte* ptr = buffer)
-            {
-                var overlapped = stackalloc NativeOverlapped[1];
-                overlapped[0].EventHandle = @event;
+            pOverlapped = AllocAndInitOverlapped(evt);
 
-                NativeMethods.OverlappedOperation(Handle, @event, ReadTimeout, CloseEventHandle,
-                    NativeMethods.ReadFile(Handle, ptr + offset, count, IntPtr.Zero, overlapped),
-                    overlapped, out var bytesTransferred);
-                return (int)bytesTransferred;
-            }
+            var initialResult = NativeMethods.ReadFile(Handle, buffer, count, out var bytesRead, pOverlapped);
+
+            NativeMethods.OverlappedOperation(Handle, evt, ReadTimeout, CloseEventHandle, initialResult, pOverlapped,
+                out var transferred);
+            return (int)transferred;
         }
         finally
         {
             HandleRelease();
-            NativeMethods.CloseHandle(@event);
+            if (pOverlapped != IntPtr.Zero) Marshal.FreeHGlobal(pOverlapped);
+            NativeMethods.CloseHandle(evt);
         }
     }
 
-    protected override unsafe void DeviceWrite(byte[] buffer, int offset, int count)
+    protected override void DeviceWrite(byte[] buffer, int offset, int count)
     {
         Throw.OutOfRange(buffer, offset, count);
 
-        var @event = NativeMethods.CreateResetEventOrThrow(true);
+        var evt = NativeMethods.CreateResetEventOrThrow(true);
+        var pOverlapped = IntPtr.Zero;
 
         HandleAcquireIfOpenOrFail();
         UpdateSettings();
+
         try
         {
-            fixed (byte* ptr = buffer)
-            {
-                var overlapped = stackalloc NativeOverlapped[1];
-                overlapped[0].EventHandle = @event;
+            pOverlapped = AllocAndInitOverlapped(evt);
 
-                NativeMethods.OverlappedOperation(Handle, @event, WriteTimeout, CloseEventHandle,
-                    NativeMethods.WriteFile(Handle, ptr + offset, count, IntPtr.Zero, overlapped),
-                    overlapped, out var bytesTransferred);
-                if (bytesTransferred != count) { throw new IOException("Write failed."); }
+            var initialResult = false;
+            if (offset == 0 && count == buffer.Length)
+            {
+                initialResult = NativeMethods.WriteFile(Handle, buffer, count, out _, pOverlapped);
+            }
+            else
+            {
+                var temp = new byte[count];
+                Buffer.BlockCopy(buffer, offset, temp, 0, count);
+                initialResult = NativeMethods.WriteFile(Handle, temp, count, out _, pOverlapped);
+            }
+
+            NativeMethods.OverlappedOperation(Handle, evt, WriteTimeout, CloseEventHandle, initialResult,
+                pOverlapped, out var bytesTransferred);
+
+
+            if (bytesTransferred != (uint)count)
+            {
+                throw new IOException("Write failed.");
             }
         }
         finally
         {
             HandleRelease();
-            NativeMethods.CloseHandle(@event);
+            if (pOverlapped != IntPtr.Zero) Marshal.FreeHGlobal(pOverlapped);
+            NativeMethods.CloseHandle(evt);
         }
     }
 

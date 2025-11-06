@@ -2,10 +2,8 @@
 using HidWin.Enums;
 using HidWin.Natives;
 using System.ComponentModel;
-using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
-using System.Text.RegularExpressions;
 
 namespace HidWin.Core;
 
@@ -16,22 +14,20 @@ public static class DeviceEnumerator
         if (kind != null)
             return kind switch
             {
-                DeviceKind.Hid => GetHidDevices().Cast<Device>().ToList(),
-                DeviceKind.Com => GetComDevices().Cast<Device>().ToList(),
-                DeviceKind.Usb => GetUsbDevices().Cast<Device>().ToList(),
+                DeviceKind.Hid => GetHidDevices(),
+                DeviceKind.Serial => GetSerialDevices(),
                 _ => new List<Device>()
             };
 
         var result = new List<Device>();
         result.AddRange(GetHidDevices());
-        result.AddRange(GetComDevices());
         result.AddRange(GetHidDevices());
         return result;
     }
 
-    private static List<HidDevice> GetHidDevices()
+    private static List<Device> GetHidDevices()
     {
-        var list = new List<HidDevice>();
+        var list = new List<Device>();
         NativeMethods.HidD_GetHidGuid(out var hidGuid);
 
         var devInfo = NativeMethods.SetupDiGetClassDevs(
@@ -60,7 +56,7 @@ public static class DeviceEnumerator
                         out var requiredSize, IntPtr.Zero))
                 {
                     var err = Marshal.GetLastWin32Error();
-                    if (err != 122) throw new Win32Exception(err);
+                    if (err != (int)WinError.ERROR_NO_MORE_ITEMS) throw new Win32Exception(err);
                     if (requiredSize == 0)
                     {
                         index++;
@@ -86,17 +82,12 @@ public static class DeviceEnumerator
                     }
 
                     var devicePathPtr = IntPtr.Add(detailBuffer, cbSize);
-                    var devicePath = Marshal.PtrToStringUni(devicePathPtr) ?? string.Empty;
+                    var devicePath = NormalizeString(Marshal.PtrToStringUni(devicePathPtr) ?? string.Empty);
                     if (string.IsNullOrEmpty(devicePath))
                     {
                         index++;
                         continue;
                     }
-
-                    if (devicePath.StartsWith("\\?\\"))
-                        devicePath = "\\\\?\\" + devicePath.Substring(3);
-                    else if(devicePath.StartsWith("?\\"))
-                        devicePath = "\\\\?\\" + devicePath.Substring(2);
 
                     var handle = IntPtr.Zero;
 
@@ -146,25 +137,37 @@ public static class DeviceEnumerator
         return list;
     }
 
-    private static List<ComDevice> GetComDevices()
+    public static List<Device> GetSerialDevices()
     {
-        var list = new List<ComDevice>();
-        var guid = new Guid("86E0D1E0-8089-11D0-9CE4-08003E301F73");
+        var list = new List<Device>();
 
-        var devInfo = NativeMethods.SetupDiGetClassDevs(ref guid, null, IntPtr.Zero,
-            (int)(DeviceInfoFlags.DIGCF_PRESENT | DeviceInfoFlags.DIGCF_DEVICEINTERFACE));
+        var guids = new[]
+        {
+                new Guid("86E0D1E0-8089-11D0-9CE4-08003E301F73"),
+                new Guid("A5DCBF10-6530-11D2-901F-00C04FB951ED")
+            };
+
+        foreach (var guid in guids)
+        {
+            list.AddRange(GetDevice(guid));
+        }
+
+        return list;
+    }
+
+    private static List<Device> GetDevice(Guid guid)
+    {
+        var list = new List<Device>();
+        var flags = (int)(DeviceInfoFlags.DIGCF_PRESENT | DeviceInfoFlags.DIGCF_DEVICEINTERFACE);
+        var devInfo = NativeMethods.SetupDiGetClassDevs(ref guid, null, IntPtr.Zero, flags);
         if (devInfo == IntPtr.Zero || devInfo.ToInt64() == -1) return list;
 
         try
         {
             uint index = 0;
-            const int BUF_FRIENDLY = 512;
-            var friendlyBuf = new byte[BUF_FRIENDLY];
-
             while (true)
             {
                 var ifaceData = new NativeMethods.SP_DEVICE_INTERFACE_DATA().SetCbSize();
-
                 if (!NativeMethods.SetupDiEnumDeviceInterfaces(devInfo, IntPtr.Zero, ref guid, index, out ifaceData))
                 {
                     var err = Marshal.GetLastWin32Error();
@@ -175,19 +178,13 @@ public static class DeviceEnumerator
                 if (!NativeMethods.SetupDiGetDeviceInterfaceDetail(devInfo, ref ifaceData, IntPtr.Zero, 0, out var requiredSize, IntPtr.Zero))
                 {
                     var err = Marshal.GetLastWin32Error();
-                    if (err == (int)WinError.ERROR_INSUFFICIENT_BUFFER)
-                        throw new Win32Exception(err);
-                    if (requiredSize == 0)
-                    {
-                        index++;
-                        continue;
-                    }
+                    if (err != (int)WinError.ERROR_NO_MORE_ITEMS) throw new Win32Exception(err);
+                    if (requiredSize == 0) { index++; continue; }
                 }
 
+                var cbSize = (IntPtr.Size == 8) ? 8 : 6;
                 var detailBuffer = Marshal.AllocHGlobal(requiredSize);
                 var devInfoDataPtr = IntPtr.Zero;
-
-                var cbSize = (IntPtr.Size == 8) ? 8 : 6;
 
                 try
                 {
@@ -200,166 +197,107 @@ public static class DeviceEnumerator
                     }
 
                     var pDevicePath = IntPtr.Add(detailBuffer, cbSize);
-                    var devicePath = Marshal.PtrToStringUni(pDevicePath) ?? string.Empty;
-                    if (devicePath.StartsWith("?\\"))
-                        devicePath = "\\\\?\\" + devicePath.Substring(2);
-                    else if (devicePath.StartsWith("\\?\\"))
-                        devicePath = "\\\\?\\" + devicePath.Substring(3);
+                    var devicePath = NormalizeString(Marshal.PtrToStringUni(pDevicePath) ?? string.Empty);
 
                     var devInfoDataSize = Marshal.SizeOf<NativeMethods.SP_DEVINFO_DATA>();
                     devInfoDataPtr = Marshal.AllocHGlobal(devInfoDataSize);
-                    try
+                    var devInfoDataInit = new NativeMethods.SP_DEVINFO_DATA().SetCbSize();
+                    Marshal.StructureToPtr(devInfoDataInit, devInfoDataPtr, false);
+
+                    var gotDevInfoData = NativeMethods.SetupDiGetDeviceInterfaceDetail(devInfo, ref ifaceData, detailBuffer, requiredSize, out _, devInfoDataPtr);
+
+                    var devInfoData = new NativeMethods.SP_DEVINFO_DATA();
+                    var deviceInstanceId = string.Empty;
+                    if (gotDevInfoData)
                     {
-                        var devInfoDataInit = new NativeMethods.SP_DEVINFO_DATA().SetCbSize();
-                        Marshal.StructureToPtr(devInfoDataInit, devInfoDataPtr, false);
-
-                        var gotDevInfoData = NativeMethods.SetupDiGetDeviceInterfaceDetail(devInfo, ref ifaceData, detailBuffer, requiredSize, out _, devInfoDataPtr);
-
-                        var deviceInstanceId = string.Empty;
-                        var devInfoData = new NativeMethods.SP_DEVINFO_DATA();
-                        if (gotDevInfoData)
-                        {
-                            devInfoData = Marshal.PtrToStructure<NativeMethods.SP_DEVINFO_DATA>(devInfoDataPtr);
-                            try
-                            {
-                                deviceInstanceId = GetDeviceInstanceId(devInfo, ref devInfoData);
-                            }
-                            catch
-                            {
-                                deviceInstanceId = string.Empty;
-                            }
-                        }
-
-                        ushort vendor = 0, product = 0;
-                        var haveVidPid = false;
-                        if (gotDevInfoData)
-                        {
-                            var buf = new byte[2048];
-                            if (NativeMethods.SetupDiGetDeviceRegistryProperty(devInfo, ref devInfoData, (uint)SetupDiProperty.SPDRP_HARDWAREID, out _, buf, (uint)buf.Length, out var required))
-                            {
-                                string hwIds;
-                                try
-                                {
-                                    hwIds = Encoding.Unicode.GetString(buf, 0, (int)required);
-                                }
-                                catch
-                                {
-                                    hwIds = Encoding.Default.GetString(buf, 0, (int)required);
-                                }
-
-                                var parts = hwIds.Split(new[] { '\0' }, StringSplitOptions.RemoveEmptyEntries);
-                                var vidpidRegex = new Regex(@"VID_([0-9A-Fa-f]{4}).*PID_([0-9A-Fa-f]{4})",
-                                    RegexOptions.IgnoreCase);
-                                foreach (var part in parts)
-                                {
-                                    var m = vidpidRegex.Match(part);
-                                    if (!m.Success) continue;
-                                    if (ushort.TryParse(m.Groups[1].Value, System.Globalization.NumberStyles.HexNumber, null, out var v) &&
-                                        ushort.TryParse(m.Groups[2].Value, System.Globalization.NumberStyles.HexNumber, null, out var p))
-                                    {
-                                        vendor = v;
-                                        product = p;
-                                        haveVidPid = true;
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-
-                        if (!haveVidPid)
-                        {
-                            var h = NativeMethods.CreateFile(
-                                devicePath,
-                                (uint)FileAccessMode.GENERIC_READ,
-                                (uint)(FileShareMode.FILE_SHARE_READ | FileShareMode.FILE_SHARE_WRITE),
-                                IntPtr.Zero,
-                                (uint)FileCreationDisposition.OPEN_EXISTING,
-                                0,
-                                IntPtr.Zero);
-
-                            if (h != IntPtr.Zero && h.ToInt64() != -1)
-                            {
-                                try
-                                {
-                                    var attrs = new NativeMethods.HIDD_ATTRIBUTES { Size = Marshal.SizeOf<NativeMethods.HIDD_ATTRIBUTES>() };
-                                    if (NativeMethods.HidD_GetAttributes(h, ref attrs))
-                                    {
-                                        vendor = attrs.VendorID;
-                                        product = attrs.ProductID;
-                                        haveVidPid = true;
-                                    }
-                                }
-                                finally
-                                {
-                                    NativeMethods.CloseHandle(h);
-                                }
-                            }
-                        }
-
-                        var friendly = string.Empty;
+                        devInfoData = Marshal.PtrToStructure<NativeMethods.SP_DEVINFO_DATA>(devInfoDataPtr);
                         try
                         {
-                            if (gotDevInfoData)
+                            deviceInstanceId = GetDeviceInstanceId(devInfo, ref devInfoData);
+                        }
+                        catch
+                        {
+                            deviceInstanceId = string.Empty;
+                        }
+                    }
+
+                    ushort vendor = 0, product = 0;
+                    var haveVidPid = false;
+
+                    if (gotDevInfoData)
+                    {
+                        var buf = new byte[4096];
+                        if (NativeMethods.SetupDiGetDeviceRegistryProperty(devInfo, ref devInfoData, (uint)SetupDiProperty.SPDRP_HARDWAREID, out _, buf, (uint)buf.Length, out var required))
+                        {
+                            string hwIds;
+                            try { hwIds = Encoding.Unicode.GetString(buf, 0, (int)required); }
+                            catch { hwIds = Encoding.Default.GetString(buf, 0, (int)required); }
+
+                            if (TryExtractVidPidFromHwIdString(hwIds, out vendor, out product))
+                                haveVidPid = true;
+                        }
+                    }
+
+                    if (!haveVidPid)
+                    {
+                        var h = NativeMethods.CreateFile(devicePath, (uint)FileAccessMode.GENERIC_READ, (uint)(FileShareMode.FILE_SHARE_READ | FileShareMode.FILE_SHARE_WRITE), IntPtr.Zero, (uint)FileCreationDisposition.OPEN_EXISTING, 0, IntPtr.Zero);
+                        if (h != IntPtr.Zero && h.ToInt64() != -1)
+                        {
+                            try
                             {
-                                if (!NativeMethods.SetupDiGetDeviceRegistryProperty(devInfo, ref devInfoData,
-                                        (uint)SetupDiProperty.SPDRP_FRIENDLYNAME, out _, friendlyBuf,
-                                        (uint)friendlyBuf.Length, out var reqF))
+                                var attrs = new NativeMethods.HIDD_ATTRIBUTES { Size = Marshal.SizeOf<NativeMethods.HIDD_ATTRIBUTES>() };
+                                if (NativeMethods.HidD_GetAttributes(h, ref attrs))
                                 {
-                                }
-                                else
-                                {
-                                    try
-                                    {
-                                        friendly = Encoding.Unicode.GetString(friendlyBuf, 0, (int)reqF).TrimEnd('\0');
-                                    }
-                                    catch
-                                    {
-                                        friendly = Encoding.Default.GetString(friendlyBuf, 0, (int)reqF).TrimEnd('\0');
-                                    }
+                                    vendor = attrs.VendorID;
+                                    product = attrs.ProductID;
+                                    haveVidPid = true;
                                 }
                             }
+                            finally
+                            {
+                                NativeMethods.CloseHandle(h);
+                            }
                         }
-                        catch { friendly = string.Empty; }
-
-                        var portName = string.Empty;
-                        var mFriendly = Regex.Match(friendly ?? string.Empty, @"\bCOM\d+\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-                        if (mFriendly.Success) portName = mFriendly.Value.ToUpperInvariant();
-                        else
-                        {
-                            var m2 = Regex.Match(devicePath ?? string.Empty, @"\bCOM\d+\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-                            if (m2.Success) portName = m2.Value.ToUpperInvariant();
-                        }
-
-                        if (string.IsNullOrEmpty(portName)) portName = devicePath;
-
-                        var comDevice = new ComDevice
-                        {
-                            PortName = portName,
-                            DevicePath = devicePath,
-                            VendorId = haveVidPid ? vendor : (ushort)0,
-                            ProductId = haveVidPid ? product : (ushort)0,
-                            FriendlyName = friendly,
-                            DeviceId = deviceInstanceId,
-                            FileSystemName = TryGetFileSystemNameFromPath(devicePath)
-                        };
-
-                        list.Add(comDevice);
                     }
-                    finally
+
+                    var friendly = string.Empty;
+                    if (gotDevInfoData)
                     {
-                        if (devInfoDataPtr != IntPtr.Zero)
+                        var friendlyBuf = new byte[512];
+                        if (NativeMethods.SetupDiGetDeviceRegistryProperty(devInfo, ref devInfoData, (uint)SetupDiProperty.SPDRP_FRIENDLYNAME, out _, friendlyBuf, (uint)friendlyBuf.Length, out var reqF))
                         {
-                            Marshal.FreeHGlobal(devInfoDataPtr);
-                            devInfoDataPtr = IntPtr.Zero;
+                            try { friendly = Encoding.Unicode.GetString(friendlyBuf, 0, (int)reqF).TrimEnd('\0'); }
+                            catch { friendly = Encoding.Default.GetString(friendlyBuf, 0, (int)reqF).TrimEnd('\0'); }
                         }
                     }
 
-                    index++;
+                    var portName = ExtractComPortName(friendly);
+                    if (string.IsNullOrEmpty(portName)) portName = ExtractComPortName(devicePath);
+                    if (string.IsNullOrEmpty(portName)) portName = devicePath;
+
+                    var comDevice = new SerialDevice
+                    {
+                        PortName = portName,
+                        DevicePath = devicePath,
+                        VendorId = haveVidPid ? vendor : (ushort)0,
+                        ProductId = haveVidPid ? product : (ushort)0,
+                        FriendlyName = friendly,
+                        DeviceId = deviceInstanceId,
+                        FileSystemName = TryGetFileSystemNameFromPath(devicePath)
+                    };
+
+                    list.Add(comDevice);
                 }
                 finally
                 {
+                    if (devInfoDataPtr != IntPtr.Zero)
+                    {
+                        Marshal.FreeHGlobal(devInfoDataPtr);
+                    }
                     Marshal.FreeHGlobal(detailBuffer);
                 }
+
+                index++;
             }
         }
         finally
@@ -371,99 +309,127 @@ public static class DeviceEnumerator
     }
 
 
-    private static List<UsbDevice> GetUsbDevices()
+    private static string NormalizeString(string value)
     {
-        var list = new List<UsbDevice>();
-        var guid = new Guid("A5DCBF10-6530-11D2-901F-00C04FB951ED");
-        var devInfo = NativeMethods.SetupDiGetClassDevs(ref guid, null, IntPtr.Zero, 0x00000002 | 0x00000010);
-        if (devInfo == IntPtr.Zero || devInfo.ToInt64() == -1) return list;
+        var result = string.Empty;
+        if (value.StartsWith("\\?\\")) result = "\\\\?\\" + value[3..];
+        else if (value.StartsWith("?\\")) result = "\\\\?\\" + value[2..];
 
-        try
+        return result;
+    }
+
+
+    private static bool TryExtractVidPidFromHwIdString(string hwIds, out ushort vid, out ushort pid)
+    {
+        vid = 0; pid = 0;
+        if (string.IsNullOrEmpty(hwIds)) return false;
+
+        var s = hwIds.ToUpperInvariant();
+
+        var vidIndex = s.IndexOf("VID_", StringComparison.Ordinal);
+
+        var vidStr = string.Empty;
+        var pidStr = string.Empty;
+
+        if (vidIndex >= 0 && vidIndex + 4 + 4 <= s.Length)
         {
-            uint index = 0;
-            while (true)
+            var start = vidIndex + 4;
+            vidStr = ReadHexDigits(s, start, 4);
+            if (vidStr.Length == 4 && ushort.TryParse(vidStr, System.Globalization.NumberStyles.HexNumber, null, out var v))
             {
-                var deviceInterfaceData = new NativeMethods.SP_DEVICE_INTERFACE_DATA().SetCbSize();
-                if (!NativeMethods.SetupDiEnumDeviceInterfaces(devInfo, IntPtr.Zero, ref guid, index, out deviceInterfaceData))
+                var pidIndex = s.IndexOf("PID_", start + 4, StringComparison.Ordinal);
+                if (pidIndex >= 0 && pidIndex + 4 + 4 <= s.Length)
                 {
-                    var err = Marshal.GetLastWin32Error();
-                    if (err == 259) break;
-                    throw new Win32Exception(err);
-                }
-
-                if (!NativeMethods.SetupDiGetDeviceInterfaceDetail(devInfo, ref deviceInterfaceData, IntPtr.Zero, 0, out var requiredSize, IntPtr.Zero))
-                {
-                    var err = Marshal.GetLastWin32Error();
-                    if (err != 122) throw new Win32Exception(err);
-                    if (requiredSize == 0)
+                    var pstart = pidIndex + 4;
+                    pidStr = ReadHexDigits(s, pstart, 4);
+                    if (pidStr.Length == 4 && ushort.TryParse(pidStr, System.Globalization.NumberStyles.HexNumber, null, out var p))
                     {
-                        index++;
-                        continue;
+                        vid = v; pid = p;
+                        return true;
                     }
                 }
-
-                var cbSize = (IntPtr.Size == 8) ? 8 : 6;
-
-                var detailDataBuffer = Marshal.AllocHGlobal(requiredSize);
-                try
+                else
                 {
-                    Marshal.WriteInt32(detailDataBuffer, cbSize);
-                    if (!NativeMethods.SetupDiGetDeviceInterfaceDetail(devInfo, ref deviceInterfaceData, detailDataBuffer, requiredSize, out _, IntPtr.Zero))
+                    var anyPid = s.IndexOf("PID_", StringComparison.Ordinal);
+                    if (anyPid >= 0 && anyPid + 4 + 4 <= s.Length)
                     {
-                        index++;
-                        continue;
+                        pidStr = ReadHexDigits(s, anyPid + 4, 4);
+                        if (pidStr.Length == 4 && ushort.TryParse(pidStr, System.Globalization.NumberStyles.HexNumber, null, out var p))
+                        {
+                            vid = v; pid = p;
+                            return true;
+                        }
                     }
-
-                    var devicePathPtr = IntPtr.Add(detailDataBuffer, cbSize);
-                    var devicePath = Marshal.PtrToStringUni(devicePathPtr) ?? string.Empty;
-                    if (string.IsNullOrEmpty(devicePath))
-                    {
-                        index++;
-                        continue;
-                    }
-                    if (devicePath.StartsWith("?\\"))
-                        devicePath = "\\\\?\\" + devicePath.Substring(2);
-
-                    list.Add(new UsbDevice { DevicePath = devicePath });
-                    index++;
-                }
-                finally
-                {
-                    Marshal.FreeHGlobal(detailDataBuffer);
                 }
             }
         }
-        finally
-        {
-            NativeMethods.SetupDiDestroyDeviceInfoList(devInfo);
-        }
 
-        return list;
+        var pidIndex2 = s.IndexOf("PID_", StringComparison.Ordinal);
+        if (pidIndex2 < 0 || pidIndex2 + 4 + 4 > s.Length) return false;
+
+        pidStr = ReadHexDigits(s, pidIndex2 + 4, 4);
+        if (pidStr.Length != 4 ||
+            !ushort.TryParse(pidStr, System.Globalization.NumberStyles.HexNumber, null, out var p1)) return false;
+        var vidIndex2 = s.IndexOf("VID_", StringComparison.Ordinal);
+        if (vidIndex2 < 0 || vidIndex2 + 4 + 4 > s.Length) return false;
+        vidStr = ReadHexDigits(s, vidIndex2 + 4, 4);
+        if (vidStr.Length != 4 ||
+            !ushort.TryParse(vidStr, System.Globalization.NumberStyles.HexNumber, null, out var v2)) return false;
+        vid = v2; pid = p1; return true;
+
     }
 
-
-    private static string TryGetDeviceInstanceId(IntPtr devInfoSet, IntPtr devInfoElement, IntPtr devInfoDataPtr)
+    private static string ReadHexDigits(string s, int pos, int maxDigits)
     {
-        try
+        var sb = new StringBuilder();
+        for (var i = 0; i < maxDigits && pos + i < s.Length; i++)
         {
-            if (devInfoDataPtr == IntPtr.Zero) return string.Empty;
-            var devInfoData = Marshal.PtrToStructure<NativeMethods.SP_DEVINFO_DATA>(devInfoDataPtr);
-            return GetDeviceInstanceId(devInfoSet, ref devInfoData);
+            var c = s[pos + i];
+            var isHex =
+                c is >= '0' and <= '9' or >= 'A' and <= 'F' or >= 'a' and <= 'f';
+            if (!isHex) break;
+            sb.Append(c);
         }
-        catch
+        return sb.ToString();
+    }
+
+    private static string ExtractComPortName(string input)
+    {
+        if (string.IsNullOrEmpty(input)) return string.Empty;
+        var s = input.ToUpperInvariant();
+        for (var i = 0; i < s.Length - 2; i++)
         {
-            return string.Empty;
+            if (s[i] != 'C') continue;
+            if (i + 2 >= s.Length) continue;
+            if (s[i + 1] != 'O' || s[i + 2] != 'M') continue;
+
+            var j = i + 3;
+            var digits = new StringBuilder();
+            while (j < s.Length && char.IsDigit(s[j]) && digits.Length < 5) 
+            {
+                digits.Append(s[j]);
+                j++;
+            }
+
+            if (digits.Length > 0)
+            {
+                return "COM" + digits.ToString();
+            }
         }
+
+        return string.Empty;
     }
 
     private static string TryGetFileSystemNameFromPath(string path)
     {
         try
         {
-            var m = Regex.Match(path, @"^[A-Za-z]:\\");
-            if (m.Success)
+            if (string.IsNullOrEmpty(path)) return string.Empty;
+
+            if (path.Length >= 3 && path[1] == ':' && (path[2] == '\\' || path[2] == '/')
+                && ((path[0] >= 'A' && path[0] <= 'Z') || (path[0] >= 'a' && path[0] <= 'z')))
             {
-                var root = path[..3];
+                var root = path[..3].Replace('/', '\\');
                 try
                 {
                     var di = new DriveInfo(root);
@@ -471,28 +437,41 @@ public static class DeviceEnumerator
                 }
                 catch
                 {
-                    return null;
+                    return string.Empty;
                 }
             }
 
-            var mVol = Regex.Match(path, @"^\\\\\?\\Volume\{[0-9A-Fa-f\-]+\}\\?", RegexOptions.IgnoreCase);
-            if (mVol.Success)
-            {
-                var volPath = "\\".EndsWith(path) ? path : $"{path}\\";
+            const string volumePrefix = @"\\?\Volume{";
+            if (path.Length < volumePrefix.Length || !path.StartsWith(volumePrefix, StringComparison.OrdinalIgnoreCase))
+                return string.Empty;
+            var closeBrace = path.IndexOf('}', volumePrefix.Length - 1);
+            if (closeBrace <= volumePrefix.Length - 2) return string.Empty;
+            var volRoot = string.Empty;
+            if (closeBrace + 1 < path.Length && (path[closeBrace + 1] == '\\' || path[closeBrace + 1] == '/'))
+                volRoot = path[..(closeBrace + 2)]; 
+            else
+                volRoot = path[..(closeBrace + 1)] + "\\";
 
-                var fsNameBuf = new StringBuilder(261);
-                if (NativeMethods.GetVolumeInformation(volPath, null, 0, out _, out _, out _, fsNameBuf, (uint)fsNameBuf.Capacity))
+            var fsNameBuf = new StringBuilder(261);
+            try
+            {
+                if (NativeMethods.GetVolumeInformation(volRoot, null, 0, out _, out _, out _, fsNameBuf, (uint)fsNameBuf.Capacity))
                 {
                     return fsNameBuf.ToString().TrimEnd('\0');
                 }
             }
+            catch
+            {
+                return string.Empty;
+            }
+
+            return string.Empty;
+
         }
         catch
         {
-            // ignored
+            return string.Empty;
         }
-
-        return string.Empty;
     }
 
     private static string GetDeviceInstanceId(IntPtr devInfoSet, ref NativeMethods.SP_DEVINFO_DATA devInfoData)

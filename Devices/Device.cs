@@ -24,8 +24,7 @@ public abstract class Device
         Stream = Kind switch
         {
             DeviceKind.Hid => new HidStream(DevicePath),
-            DeviceKind.Usb => new UsbStream(DevicePath),
-            DeviceKind.Com => new ComStream(DevicePath),
+            DeviceKind.Serial => new SerialStream(DevicePath),
             _ => throw new NotSupportedException($"Device kind {Kind} is not supported.")
         };
         return Stream;

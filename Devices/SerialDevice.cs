@@ -6,7 +6,7 @@ using System.Text.RegularExpressions;
 
 namespace HidWin.Devices;
 
-public sealed class ComDevice : Device
+public sealed class SerialDevice : Device
 {
     public string DeviceId { get; init; }
     public string FileSystemName { get; init; }
@@ -14,7 +14,7 @@ public sealed class ComDevice : Device
 
     public string PortName { get; init; }
 
-    public ComDevice() : base(DeviceKind.Com)
+    public SerialDevice() : base(DeviceKind.Serial)
     {
     }
 

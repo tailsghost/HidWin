@@ -1,5 +1,6 @@
 ﻿using HidWin.Core;
 using HidWin.Natives;
+using System.Runtime.InteropServices;
 
 namespace HidWin.Streams;
 
@@ -65,8 +66,23 @@ public abstract unsafe class DeviceStream : Stream
         _disposed = true;
     }
 
-    protected abstract unsafe int DeviceRead(byte[] buffer, int offset, int count);
-    protected abstract unsafe void DeviceWrite(byte[] buffer, int offset, int count);
+    protected abstract int DeviceRead(byte[] buffer, int offset, int count);
+    protected abstract void DeviceWrite(byte[] buffer, int offset, int count);
+
+
+    protected IntPtr AllocAndInitOverlapped(IntPtr eventHandle)
+    {
+        var size = Marshal.SizeOf(typeof(NativeOverlapped));
+        var p = Marshal.AllocHGlobal(size);
+        var ov = new NativeOverlapped
+        {
+            OffsetLow = 0,
+            OffsetHigh = 0,
+            EventHandle = eventHandle
+        };
+        Marshal.StructureToPtr(ov, p, false);
+        return p;
+    }
 
 
     protected bool SetValue<T>(ref T property, T value)
