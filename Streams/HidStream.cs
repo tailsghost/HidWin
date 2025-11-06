@@ -178,7 +178,7 @@ public sealed class HidStream : DeviceStream
 
                 try
                 {
-                    var initialResult = NativeMethods.WriteFile(Handle, chunkBuf, chunk, out var bytesWritten, pOverlapped);
+                    var initialResult = NativeMethods.WriteFile(Handle, chunkBuf, chunk, out _, pOverlapped);
 
                     NativeMethods.OverlappedOperation(Handle, evt, WriteTimeout, CloseEventHandle, initialResult, pOverlapped, out var transferred);
 

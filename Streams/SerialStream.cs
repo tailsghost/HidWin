@@ -131,7 +131,7 @@ public sealed class SerialStream : DeviceStream
         {
             pOverlapped = AllocAndInitOverlapped(evt);
 
-            var initialResult = NativeMethods.ReadFile(Handle, buffer, count, out var bytesRead, pOverlapped);
+            var initialResult = NativeMethods.ReadFile(Handle, buffer, count, out _, pOverlapped);
 
             NativeMethods.OverlappedOperation(Handle, evt, ReadTimeout, CloseEventHandle, initialResult, pOverlapped,
                 out var transferred);
@@ -207,7 +207,12 @@ public sealed class SerialStream : DeviceStream
         SetDcb(ref dcb);
         dcb.BaudRate = checked((uint)BaudRate);
         dcb.ByteSize = checked((byte)DataBits);
-        dcb.Parity = Parity == SerialParity.Even ? (byte)Enums.Parity.EVENPARITY : Parity == SerialParity.Odd ? (byte)Enums.Parity.ODDPARITY : (byte)Enums.Parity.NOPARITY;
+        dcb.Parity = Parity switch
+        {
+            SerialParity.Even => (byte)Enums.Parity.EVENPARITY,
+            SerialParity.Odd => (byte)Enums.Parity.ODDPARITY,
+            _ => (byte)Enums.Parity.NOPARITY
+        };
         dcb.StopBits = StopBits == 2 ? (byte)Enums.StopBits.TWOSTOPBITS : (byte)Enums.StopBits.ONESTOPBIT;
         if (!NativeMethods.SetCommState(Handle, ref dcb))
         {
