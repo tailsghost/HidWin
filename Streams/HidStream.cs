@@ -41,18 +41,26 @@ public sealed class HidStream : DeviceStream
         _refCount = 1;
     }
 
-    public unsafe void GetFeature(byte[] buffer, int offset, int count)
+    public void GetFeature(byte[] buffer, int offset, int count)
     {
         Throw.OutOfRange(buffer, offset, count);
 
         HandleAcquireIfOpenOrFail();
-
         try
         {
-            fixed (byte* ptr = buffer)
+            var gch = GCHandle.Alloc(buffer, GCHandleType.Pinned);
+            try
             {
-                if (!NativeMethods.HidD_GetFeature(Handle, ptr + offset, count))
-                    throw new IOException($"{nameof(GetFeature)} failed");
+                var basePtr = gch.AddrOfPinnedObject();
+                var ptr = IntPtr.Add(basePtr, offset);
+
+                if (NativeMethods.HidD_GetFeature(Handle, ptr, count)) return;
+                var err = Marshal.GetLastWin32Error();
+                throw new IOException($"{nameof(GetFeature)} failed. Err={err}");
+            }
+            finally
+            {
+                gch.Free();
             }
         }
         finally
@@ -61,17 +69,27 @@ public sealed class HidStream : DeviceStream
         }
     }
 
-    public unsafe void SetFeature(byte[] buffer, int offset, int count)
+    public void SetFeature(byte[] buffer, int offset, int count)
     {
         Throw.OutOfRange(buffer, offset, count);
 
         HandleAcquireIfOpenOrFail();
         try
         {
-            fixed (byte* ptr = buffer)
+            var gch = GCHandle.Alloc(buffer, GCHandleType.Pinned);
+            try
             {
-                if (!NativeMethods.HidD_SetFeature(Handle, ptr + offset, count))
-                    throw new IOException("SetFeature failed.", new Win32Exception());
+                var basePtr = gch.AddrOfPinnedObject();
+                var ptr = IntPtr.Add(basePtr, offset);
+
+                if (NativeMethods.HidD_SetFeature(Handle, ptr, count)) return;
+
+                var err = Marshal.GetLastWin32Error();
+                throw new IOException($"{nameof(SetFeature)} failed. Err={err}", new Win32Exception(err));
+            }
+            finally
+            {
+                gch.Free();
             }
         }
         finally

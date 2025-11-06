@@ -285,13 +285,13 @@ public static class NativeMethods
     [DllImport("hid.dll", SetLastError = true)]
     internal static extern int HidP_GetCaps(IntPtr preparsedData, out HIDP_CAPS caps);
 
-    [DllImport("hid.dll", CharSet = CharSet.Auto)]
+    [DllImport("hid.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.U1)]
-    public static extern unsafe bool HidD_GetFeature(IntPtr handle, byte* buffer, int bufferLength);
+    public static extern bool HidD_GetFeature(IntPtr handle, IntPtr reportBuffer, int reportBufferLength);
 
-    [DllImport("hid.dll", CharSet = CharSet.Auto)]
+    [DllImport("hid.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.U1)]
-    public static extern unsafe bool HidD_SetFeature(IntPtr handle, byte* buffer, int bufferLength);
+    public static extern bool HidD_SetFeature(IntPtr handle, IntPtr reportBuffer, int reportBufferLength);
 
     [DllImport("hid.dll", SetLastError = true, CharSet = CharSet.Auto)]
     [return: MarshalAs(UnmanagedType.U1)]
