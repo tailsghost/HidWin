@@ -73,14 +73,6 @@ public static class NativeMethods
     }
 
     [StructLayout(LayoutKind.Sequential)]
-    internal struct SP_DEVICE_INTERFACE_DETAIL_DATA
-    {
-        public int cbSize;
-        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 256)]
-        public string DevicePath;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
     public struct DCB
     {
         public int DCBlength;
@@ -246,23 +238,8 @@ public static class NativeMethods
         IntPtr lpOverlapped);
 
     [DllImport("kernel32.dll", SetLastError = true)]
-    internal static extern unsafe bool CancelIoEx(
-        SafeFileHandle hFile,
-        NativeOverlapped* lpOverlapped);
-
-    [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool CloseHandle(IntPtr handle);
-
-    [DllImport("kernel32.dll", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    public unsafe static extern bool ReadFile(IntPtr handle, byte* buffer, int bytesToRead,
-        IntPtr bytesRead, NativeOverlapped* overlapped);
-
-    [DllImport("kernel32.dll", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    public unsafe static extern bool WriteFile(IntPtr handle, byte* buffer, int bytesToWrite,
-        IntPtr bytesWritten, NativeOverlapped* overlapped);
 
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
@@ -382,7 +359,6 @@ public static class NativeMethods
             (uint)FileFlags.FILE_FLAG_OVERLAPPED,
             IntPtr.Zero);
     }
-
 
     public static void OverlappedOperation(
         IntPtr ioHandle,
