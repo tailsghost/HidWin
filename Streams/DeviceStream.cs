@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 
 namespace HidWin.Streams;
 
-public abstract unsafe class DeviceStream : Stream
+public abstract class DeviceStream : Stream
 {
     private bool _disposed;
 
@@ -47,6 +47,13 @@ public abstract unsafe class DeviceStream : Stream
     }
 
 
+    public void Reset()
+    {
+        if (IsValidHandle)
+            NativeMethods.CancelIo(Handle);
+    }
+
+
     private void CurrentDomainOnProcessExit(object? sender, EventArgs e)
     {
         Dispose();
@@ -76,8 +83,6 @@ public abstract unsafe class DeviceStream : Stream
         var p = Marshal.AllocHGlobal(size);
         var ov = new NativeOverlapped
         {
-            OffsetLow = 0,
-            OffsetHigh = 0,
             EventHandle = eventHandle
         };
         Marshal.StructureToPtr(ov, p, false);

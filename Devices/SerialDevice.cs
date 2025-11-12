@@ -1,8 +1,4 @@
 ﻿using HidWin.Enums;
-using HidWin.Natives;
-using System.Runtime.InteropServices;
-using System.Text;
-using System.Text.RegularExpressions;
 
 namespace HidWin.Devices;
 

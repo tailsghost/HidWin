@@ -1,5 +1,4 @@
-﻿using HidWin.Devices;
-using HidWin.Enums;
+﻿using HidWin.Enums;
 using HidWin.Exceptions;
 using HidWin.Natives;
 using System.ComponentModel;
@@ -9,6 +8,8 @@ namespace HidWin.Streams;
 
 public sealed class HidStream : DeviceStream
 {
+    private object _readSync = new();
+    private object _writeSync = new();
     private int _opened;
     private int _closed;
     private int _refCount;
@@ -44,7 +45,6 @@ public sealed class HidStream : DeviceStream
     public void GetFeature(byte[] buffer, int offset, int count)
     {
         Throw.OutOfRange(buffer, offset, count);
-
         HandleAcquireIfOpenOrFail();
         try
         {
@@ -116,38 +116,48 @@ public sealed class HidStream : DeviceStream
 
         var evt = NativeMethods.CreateResetEventOrThrow(true);
         var pOverlapped = IntPtr.Zero;
+        GCHandle? pinned = null;
 
         HandleAcquireIfOpenOrFail();
 
         try
         {
-            var minIn = MaxInputReportLength();
-            if (minIn <= 0)
-                throw new IOException("Can't read from this device.");
+            lock (_readSync)
+            {
+                var minIn = MaxInputReportLength();
+                if (minIn <= 0)
+                    throw new IOException("Can't read from this device.");
 
-            var want = Math.Max(count, minIn);
-            if (_readBuffer.Length < want)
-                Array.Resize(ref _readBuffer, want);
+                if (minIn > count)
+                    throw new IOException($"Buffer too small for device minimum report length ({minIn}).");
 
-            pOverlapped = AllocAndInitOverlapped(evt);
+                pinned = GCHandle.Alloc(buffer, GCHandleType.Pinned);
+                var bufPtr = IntPtr.Add(pinned.Value.AddrOfPinnedObject(), offset);
 
-            var initialResult = NativeMethods.ReadFile(Handle, _readBuffer, want, out _, pOverlapped);
+                pOverlapped = AllocAndInitOverlapped(evt);
 
-            NativeMethods.OverlappedOperation(Handle, evt, ReadTimeout, CloseEventHandle, initialResult, pOverlapped, out var transferred);
+                var initialResult = NativeMethods.ReadFile(Handle, bufPtr, count, IntPtr.Zero, pOverlapped);
 
-            var toCopy = (int)Math.Min(count, transferred);
-            if (toCopy > 0)
-                Array.Copy(_readBuffer, 0, buffer, offset, toCopy);
+                NativeMethods.OverlappedOperation(Handle, evt, ReadTimeout, CloseEventHandle,
+                    initialResult, pOverlapped, out var transferred);
 
-            return toCopy;
+                return (int)Math.Min(transferred, (uint)count);
+            }
         }
         finally
         {
             HandleRelease();
+
             if (pOverlapped != IntPtr.Zero)
             {
                 Marshal.FreeHGlobal(pOverlapped);
             }
+
+            if (pinned.HasValue && pinned.Value.IsAllocated)
+            {
+                pinned.Value.Free();
+            }
+
             NativeMethods.CloseHandle(evt);
         }
     }
@@ -158,68 +168,72 @@ public sealed class HidStream : DeviceStream
 
         var evt = NativeMethods.CreateResetEventOrThrow(true);
         var pOverlapped = IntPtr.Zero;
+        GCHandle? pinned = null;
 
         HandleAcquireIfOpenOrFail();
 
         try
         {
-            var minOut = MaxInputReportLength();
-            if (minOut <= 0)
-                throw new IOException("Can't write to this device.");
-
-            var want = Math.Max(count, minOut);
-            if (_writeBuffer.Length < want)
-                Array.Resize(ref _writeBuffer, want);
-
-            Array.Clear(_writeBuffer, 0, _writeBuffer.Length);
-            Array.Copy(buffer, offset, _writeBuffer, 0, count);
-
-            var remaining = (count < minOut) ? minOut : count;
-            var writeOffset = 0;
-
-            while (remaining > 0)
+            lock (_writeSync)
             {
-                var chunk = Math.Min(minOut, remaining);
+                var minOut = MaxInputReportLength();
+                if (minOut <= 0)
+                    throw new IOException("Can't write to this device.");
 
-                byte[] chunkBuf;
-                if (writeOffset == 0 && chunk == _writeBuffer.Length || writeOffset == 0 && chunk < _writeBuffer.Length)
+                var want = Math.Max(count, minOut);
+                if (buffer.Length - offset < want)
+                    throw new ArgumentException("Provided buffer is too small for the requested write.");
+
+                pinned = GCHandle.Alloc(buffer, GCHandleType.Pinned);
+                var basePtr = pinned.Value.AddrOfPinnedObject();
+
+                var remaining = (count < minOut) ? minOut : count;
+                var writeOffset = 0;
+
+                while (remaining > 0)
                 {
-                    chunkBuf = _writeBuffer;
-                }
-                else
-                {
-                    chunkBuf = new byte[chunk];
-                    Buffer.BlockCopy(_writeBuffer, writeOffset, chunkBuf, 0, chunk);
-                }
+                    var chunk = Math.Min(minOut, remaining);
+                    var bufPtr = IntPtr.Add(basePtr, offset + writeOffset);
+                    pOverlapped = AllocAndInitOverlapped(evt);
 
-                pOverlapped = AllocAndInitOverlapped(evt);
-
-                try
-                {
-                    var initialResult = NativeMethods.WriteFile(Handle, chunkBuf, chunk, out _, pOverlapped);
-
-                    NativeMethods.OverlappedOperation(Handle, evt, WriteTimeout, CloseEventHandle, initialResult, pOverlapped, out var transferred);
-
-                    remaining -= (int)transferred;
-                    writeOffset += (int)transferred;
-                }
-                finally
-                {
-                    if (pOverlapped != IntPtr.Zero)
+                    try
                     {
-                        Marshal.FreeHGlobal(pOverlapped);
-                        pOverlapped = IntPtr.Zero;
+                        var initialResult = NativeMethods.WriteFile(Handle, bufPtr, chunk, IntPtr.Zero, pOverlapped);
+
+                        NativeMethods.OverlappedOperation(Handle, evt, WriteTimeout, CloseEventHandle,
+                            initialResult, pOverlapped, out var transferred);
+
+                        remaining -= (int)transferred;
+                        writeOffset += (int)transferred;
+                    }
+                    finally
+                    {
+                        if (pOverlapped != IntPtr.Zero)
+                        {
+                            Marshal.FreeHGlobal(pOverlapped);
+                            pOverlapped = IntPtr.Zero;
+                        }
                     }
                 }
+
+                if (writeOffset < count)
+                    throw new IOException("Write failed: not all bytes were transferred.");
             }
         }
         finally
         {
             HandleRelease();
+
             if (pOverlapped != IntPtr.Zero)
             {
                 Marshal.FreeHGlobal(pOverlapped);
             }
+
+            if (pinned.HasValue && pinned.Value.IsAllocated)
+            {
+                pinned.Value.Free();
+            }
+
             NativeMethods.CloseHandle(evt);
         }
     }

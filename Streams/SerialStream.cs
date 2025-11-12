@@ -1,7 +1,7 @@
-﻿using HidWin.Enums;
+﻿using System.ComponentModel;
+using HidWin.Enums;
 using HidWin.Exceptions;
 using HidWin.Natives;
-using System.IO;
 using System.Runtime.InteropServices;
 
 namespace HidWin.Streams;
@@ -17,6 +17,8 @@ public sealed class SerialStream : DeviceStream
     private SerialParity _parity;
     private int _stopBits;
     private bool _settingsChanged;
+
+    private object _lock = new();
 
     internal void HandleInitAndOpen()
     {
@@ -82,12 +84,23 @@ public sealed class SerialStream : DeviceStream
         Handle = NativeMethods.CreateFileFromDevice(
             port,
             FileAccessMode.GENERIC_READ | FileAccessMode.GENERIC_WRITE,
-            FileShareMode.FILE_SHARE_READ | FileShareMode.FILE_SHARE_WRITE
+            FileShareMode.NONE
         );
 
         CloseEventHandle = NativeMethods.CreateResetEventOrThrow(true);
 
         Throw.Handle.Invalid(Handle, "Unable to open COM class device (" + port + ").");
+
+        var timeouts = new NativeMethods.COMMTIMEOUTS();
+        timeouts.ReadIntervalTimeout = uint.MaxValue;
+        timeouts.ReadTotalTimeoutConstant = uint.MaxValue - 1;
+        timeouts.ReadTotalTimeoutMultiplier = uint.MaxValue;
+        if (!NativeMethods.SetCommTimeouts(Handle, out timeouts))
+        {
+            var hr = Marshal.GetHRForLastWin32Error();
+            NativeMethods.CloseHandle(Handle);
+            throw new IOException("Unable to set serial timeouts.", hr);
+        }
 
         BaudRate = 9600;
         DataBits = 8;
@@ -122,16 +135,21 @@ public sealed class SerialStream : DeviceStream
         Throw.OutOfRange(buffer, offset, count);
 
         var evt = NativeMethods.CreateResetEventOrThrow(true);
+
         var pOverlapped = IntPtr.Zero;
+        GCHandle? pinned = null;
 
         HandleAcquireIfOpenOrFail();
         UpdateSettings();
 
         try
         {
+            pinned = GCHandle.Alloc(buffer, GCHandleType.Pinned);
+            var bufPtr = IntPtr.Add(pinned.Value.AddrOfPinnedObject(), offset);
+
             pOverlapped = AllocAndInitOverlapped(evt);
 
-            var initialResult = NativeMethods.ReadFile(Handle, buffer, count, out _, pOverlapped);
+            var initialResult = NativeMethods.ReadFile(Handle, bufPtr, count, IntPtr.Zero, pOverlapped);
 
             NativeMethods.OverlappedOperation(Handle, evt, ReadTimeout, CloseEventHandle, initialResult, pOverlapped,
                 out var transferred);
@@ -140,7 +158,13 @@ public sealed class SerialStream : DeviceStream
         finally
         {
             HandleRelease();
-            if (pOverlapped != IntPtr.Zero) Marshal.FreeHGlobal(pOverlapped);
+
+            if (pOverlapped != IntPtr.Zero)
+                Marshal.FreeHGlobal(pOverlapped);
+
+            if (pinned is { IsAllocated: true })
+                pinned.Value.Free();
+
             NativeMethods.CloseHandle(evt);
         }
     }
@@ -150,30 +174,25 @@ public sealed class SerialStream : DeviceStream
         Throw.OutOfRange(buffer, offset, count);
 
         var evt = NativeMethods.CreateResetEventOrThrow(true);
+
         var pOverlapped = IntPtr.Zero;
+        GCHandle? pinned = null;
 
         HandleAcquireIfOpenOrFail();
         UpdateSettings();
 
         try
         {
+            pinned = GCHandle.Alloc(buffer, GCHandleType.Pinned);
+            var basePtr = pinned.Value.AddrOfPinnedObject();
+            var bufPtr = IntPtr.Add(basePtr, offset);
+
             pOverlapped = AllocAndInitOverlapped(evt);
 
-            var initialResult = false;
-            if (offset == 0 && count == buffer.Length)
-            {
-                initialResult = NativeMethods.WriteFile(Handle, buffer, count, out _, pOverlapped);
-            }
-            else
-            {
-                var temp = new byte[count];
-                Buffer.BlockCopy(buffer, offset, temp, 0, count);
-                initialResult = NativeMethods.WriteFile(Handle, temp, count, out _, pOverlapped);
-            }
+            var initialResult = NativeMethods.WriteFile(Handle, bufPtr, count, IntPtr.Zero, pOverlapped);
 
             NativeMethods.OverlappedOperation(Handle, evt, WriteTimeout, CloseEventHandle, initialResult,
                 pOverlapped, out var bytesTransferred);
-
 
             if (bytesTransferred != (uint)count)
             {
@@ -183,46 +202,55 @@ public sealed class SerialStream : DeviceStream
         finally
         {
             HandleRelease();
-            if (pOverlapped != IntPtr.Zero) Marshal.FreeHGlobal(pOverlapped);
+
+            if (pOverlapped != IntPtr.Zero)
+                Marshal.FreeHGlobal(pOverlapped);
+
+            if (pinned is { IsAllocated: true })
+                pinned.Value.Free();
+
             NativeMethods.CloseHandle(evt);
         }
     }
 
     private void UpdateSettings()
     {
-
-        if (!_settingsChanged) { return; }
-        _settingsChanged = false;
-
-        var dcb = new NativeMethods.DCB
+        lock (_lock)
         {
-            DCBlength = Marshal.SizeOf(typeof(NativeMethods.DCB))
-        };
+            if (!_settingsChanged) { return; }
+            _settingsChanged = false;
 
-        if (!NativeMethods.GetCommState(Handle, ref dcb))
-        {
-            throw new IOException("Failed to get serial state.", Marshal.GetHRForLastWin32Error());
+            var dcb = new NativeMethods.DCB
+            {
+                DCBlength = Marshal.SizeOf(typeof(NativeMethods.DCB))
+            };
+
+            if (!NativeMethods.GetCommState(Handle, ref dcb))
+            {
+                throw new IOException("Failed to get serial state.", Marshal.GetHRForLastWin32Error());
+            }
+
+            SetDcb(ref dcb);
+            dcb.BaudRate = checked((uint)BaudRate);
+            dcb.ByteSize = checked((byte)DataBits);
+            dcb.Parity = Parity switch
+            {
+                SerialParity.Even => (byte)Enums.Parity.EVENPARITY,
+                SerialParity.Odd => (byte)Enums.Parity.ODDPARITY,
+                _ => (byte)Enums.Parity.NOPARITY
+            };
+            dcb.StopBits = StopBits == 2 ? (byte)Enums.StopBits.TWOSTOPBITS : (byte)Enums.StopBits.ONESTOPBIT;
+            if (!NativeMethods.SetCommState(Handle, ref dcb))
+            {
+                throw new IOException("Failed to get serial state.", Marshal.GetHRForLastWin32Error());
+            }
+
+            var purgeFlags = PurgeFlags.PURGE_RXABORT | PurgeFlags.PURGE_RXCLEAR | PurgeFlags.PURGE_TXABORT | PurgeFlags.PURGE_TXCLEAR;
+            if (NativeMethods.PurgeComm(Handle, (uint)purgeFlags)) return;
+
+            throw new IOException("Failed to purge serial port.", Marshal.GetHRForLastWin32Error());
         }
 
-        SetDcb(ref dcb);
-        dcb.BaudRate = checked((uint)BaudRate);
-        dcb.ByteSize = checked((byte)DataBits);
-        dcb.Parity = Parity switch
-        {
-            SerialParity.Even => (byte)Enums.Parity.EVENPARITY,
-            SerialParity.Odd => (byte)Enums.Parity.ODDPARITY,
-            _ => (byte)Enums.Parity.NOPARITY
-        };
-        dcb.StopBits = StopBits == 2 ? (byte)Enums.StopBits.TWOSTOPBITS : (byte)Enums.StopBits.ONESTOPBIT;
-        if (!NativeMethods.SetCommState(Handle, ref dcb))
-        {
-            throw new IOException("Failed to get serial state.", Marshal.GetHRForLastWin32Error());
-        }
-
-        var purgeFlags = PurgeFlags.PURGE_RXABORT | PurgeFlags.PURGE_RXCLEAR | PurgeFlags.PURGE_TXABORT | PurgeFlags.PURGE_TXCLEAR;
-        if (NativeMethods.PurgeComm(Handle, (uint)purgeFlags)) return;
-
-        throw new IOException("Failed to purge serial port.", Marshal.GetHRForLastWin32Error());
     }
 
     private void SetDcb(ref NativeMethods.DCB dcb)
@@ -235,7 +263,6 @@ public sealed class SerialStream : DeviceStream
     {
         return 0 == Interlocked.CompareExchange(ref _closed, 1, 0) && _opened != 0;
     }
-
 
     protected override void Dispose(bool disposing)
     {
@@ -274,6 +301,7 @@ public sealed class SerialStream : DeviceStream
     {
         if (0 != Interlocked.Decrement(ref _refCount)) return;
         if (_opened == 0) return;
+
         NativeMethods.CloseHandle(Handle);
         NativeMethods.CloseHandle(CloseEventHandle);
     }

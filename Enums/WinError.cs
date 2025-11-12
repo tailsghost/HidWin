@@ -2,6 +2,7 @@
 
 internal enum WinError : int
 {
+    ERROR_NO_FUNCTION = 1,
     ERROR_IO_PENDING = 997,
     ERROR_OPERATION_ABORTED = 995,
     ERROR_HANDLE_EOF = 38,
