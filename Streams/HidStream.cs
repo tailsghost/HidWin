@@ -8,8 +8,8 @@ namespace HidWin.Streams;
 
 public sealed class HidStream : DeviceStream
 {
-    private object _readSync = new();
-    private object _writeSync = new();
+    private readonly object _readSync = new();
+    private readonly object _writeSync = new();
     private int _opened;
     private int _closed;
     private int _refCount;

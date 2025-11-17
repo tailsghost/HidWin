@@ -18,7 +18,7 @@ public sealed class SerialStream : DeviceStream
     private int _stopBits;
     private bool _settingsChanged;
 
-    private object _lock = new();
+    private readonly object _lock = new();
 
     internal void HandleInitAndOpen()
     {
@@ -91,11 +91,7 @@ public sealed class SerialStream : DeviceStream
 
         Throw.Handle.Invalid(Handle, "Unable to open COM class device (" + port + ").");
 
-        var timeouts = new NativeMethods.COMMTIMEOUTS();
-        timeouts.ReadIntervalTimeout = uint.MaxValue;
-        timeouts.ReadTotalTimeoutConstant = uint.MaxValue - 1;
-        timeouts.ReadTotalTimeoutMultiplier = uint.MaxValue;
-        if (!NativeMethods.SetCommTimeouts(Handle, out timeouts))
+        if (!NativeMethods.SetCommTimeouts(Handle, out _))
         {
             var hr = Marshal.GetHRForLastWin32Error();
             NativeMethods.CloseHandle(Handle);
