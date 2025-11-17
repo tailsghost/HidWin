@@ -1,14 +1,37 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks>net6.0-windows;net7.0-windows;net8.0-windows;net9.0-windows</TargetFrameworks>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+	  <TargetFrameworks>net6.0-windows;net7.0-windows;net8.0-windows;net9.0-windows;</TargetFrameworks>
+	  <ImplicitUsings>enable</ImplicitUsings>
+	  <Nullable>enable</Nullable>
+	  <Optimize>true</Optimize>
+	  <Deterministic>true</Deterministic>
+	  <ProduceReferenceAssembly>true</ProduceReferenceAssembly>
+	  <GenerateDocumentationFile>true</GenerateDocumentationFile>
+	  <IsTrimmable>true</IsTrimmable>
+	  <EnableDynamicLoading>false</EnableDynamicLoading>
+	  <PublishTrimmed>true</PublishTrimmed>
+	  <TrimMode>link</TrimMode>
+	  <PublishReadyToRun>true</PublishReadyToRun>
+	  <DebugType>none</DebugType>
+	  <DebugSymbols>false</DebugSymbols>
+	  <TieredCompilation>true</TieredCompilation>
+	  <DefineConstants>TRACE</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="DeviceListenerChanged" Version="1.0.4" />
   </ItemGroup>
+
+	<PropertyGroup>
+		<PackageId>HidWin</PackageId>
+		<Version>1.0.0</Version>
+		<Authors>TailsGhost</Authors>
+		<Description>Библиотека для работы с Hid.</Description>
+		<PackageProjectUrl>https://github.com/tailsghost/HidWin</PackageProjectUrl>
+		<RepositoryUrl>https://github.com/tailsghost/HidWin</RepositoryUrl>
+		<PackageLicenseExpression>MIT</PackageLicenseExpression>
+		<PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+	</PropertyGroup>
 
 </Project>
