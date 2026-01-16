@@ -21,7 +21,7 @@ public static class DeviceEnumerator
 
         var result = new List<Device>();
         result.AddRange(GetHidDevices());
-        result.AddRange(GetHidDevices());
+        result.AddRange(GetSerialDevices());
         return result;
     }
 
