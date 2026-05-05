@@ -30,7 +30,7 @@ public abstract class DeviceStream : Stream
     protected IntPtr Handle;
     protected IntPtr CloseEventHandle;
 
-    public bool IsValidHandle => Handle != IntPtr.Zero && Handle.ToInt64() !=-1;
+    public virtual bool IsValidHandle => Handle != IntPtr.Zero && Handle.ToInt64() !=-1;
 
     public bool TryGetString(Func<IntPtr, char[], int, bool> callback, out string value)
     {

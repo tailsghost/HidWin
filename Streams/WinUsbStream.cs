@@ -15,6 +15,8 @@ public class WinUsbStream : DeviceStream
     public WINUSB_PIPE_INFORMATION InPipe { get; private set; }
     public WINUSB_PIPE_INFORMATION OutPipe { get; private set; }
 
+    public IntPtr WinUsbHandle { get; private set; }
+
     public WinUsbStream(string port)
     {
         Handle = NativeMethods.CreateFileFromDevice(
@@ -27,6 +29,7 @@ public class WinUsbStream : DeviceStream
         Throw.Handle.Invalid(Handle, "Unable to open COM class device (" + port + ").");
         if (!NativeMethods.WinUsb_Initialize(Handle, out IntPtr handle))
             throw new Exception("WinUsb_Initialize failed");
+        WinUsbHandle = handle;
         QueryPipes();
         if (NativeMethods.SetCommTimeouts(Handle, out _)) return;
         var hr = Marshal.GetHRForLastWin32Error();
@@ -39,7 +42,7 @@ public class WinUsbStream : DeviceStream
         NativeMethods.USB_INTERFACE_DESCRIPTOR desc;
 
         if (!NativeMethods.WinUsb_QueryInterfaceSettings(
-                Handle,
+                WinUsbHandle,
                 0,
                 out desc))
         {
@@ -56,7 +59,7 @@ public class WinUsbStream : DeviceStream
             NativeMethods.WINUSB_PIPE_INFORMATION pipe;
 
             if (!NativeMethods.WinUsb_QueryPipe(
-                    Handle,
+                    WinUsbHandle,
                     0,
                     i,
                     out pipe))
@@ -84,10 +87,12 @@ public class WinUsbStream : DeviceStream
             throw new Exception("Не найдены IN/OUT endpoints");
     }
 
+    public override bool IsValidHandle => WinUsbHandle != IntPtr.Zero && WinUsbHandle.ToInt64() != -1;
+
     public override int Read(byte[] buffer, int offset, int count)
     {
         return !NativeMethods.WinUsb_ReadPipe(
-            Handle,
+            WinUsbHandle,
             InPipeId,
             buffer,
             buffer.Length,
@@ -98,7 +103,7 @@ public class WinUsbStream : DeviceStream
     public override void Write(byte[] buffer, int offset, int count)
     {
         if (!NativeMethods.WinUsb_WritePipe(
-                Handle,
+                WinUsbHandle,
                 OutPipeId,
                 buffer,
                 buffer.Length,
@@ -124,6 +129,8 @@ public class WinUsbStream : DeviceStream
         NativeMethods.SetEvent(CloseEventHandle);
         if (Handle != IntPtr.Zero)
             NativeMethods.WinUsb_Free(Handle);
+        if (WinUsbHandle != IntPtr.Zero)
+            NativeMethods.WinUsb_Free(WinUsbHandle);
         base.Dispose(disposing);
     }
 }
