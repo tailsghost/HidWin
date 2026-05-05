@@ -31,10 +31,6 @@ public class WinUsbStream : DeviceStream
             throw new Exception("WinUsb_Initialize failed");
         WinUsbHandle = handle;
         QueryPipes();
-        if (NativeMethods.SetCommTimeouts(Handle, out _)) return;
-        var hr = Marshal.GetHRForLastWin32Error();
-        Dispose();
-        throw new IOException("Unable to set serial timeouts.", hr);
     }
 
     private void QueryPipes()
