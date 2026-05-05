@@ -25,6 +25,7 @@ public abstract class Device
         {
             DeviceKind.Hid => new HidStream(DevicePath),
             DeviceKind.Serial => new SerialStream(DevicePath),
+            DeviceKind.WinUsb => new WinUsbStream(DevicePath),
             _ => throw new NotSupportedException($"Device kind {Kind} is not supported.")
         };
         return Stream;

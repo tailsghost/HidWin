@@ -1,6 +1,6 @@
 ﻿namespace HidWin.Enums;
 
-internal enum StopBits : byte
+public enum StopBits : byte
 {
     ONESTOPBIT = 0,
     ONE5STOPBITS = 1,

@@ -16,6 +16,7 @@ public static class DeviceEnumerator
             {
                 DeviceKind.Hid => GetHidDevices(),
                 DeviceKind.Serial => GetSerialDevices(),
+                DeviceKind.WinUsb => GetDevicePathByGuid(),
                 _ => new List<Device>()
             };
 
@@ -65,6 +66,92 @@ public static class DeviceEnumerator
         });
 
         return list;
+    }
+
+    private static List<Device> GetDevicePathByGuid()
+    {
+        var guid = new Guid("4d1e55b2-f16f-11cf-88cb-001111000030");
+        var deviceInfoSet = NativeMethods.SetupDiGetClassDevs(
+            ref guid,
+            IntPtr.Zero,
+            IntPtr.Zero,
+            0x00000002 | 0x00000010);
+
+        if (deviceInfoSet == (IntPtr)(-1))
+            return [];
+
+        var devices = new List<Device>();
+        try
+        {
+            var deviceInterfaceData = new NativeMethods.SP_DEVICE_INTERFACE_DATA
+            {
+                cbSize = Marshal.SizeOf(typeof(NativeMethods.SP_DEVICE_INTERFACE_DATA))
+            };
+
+            for (uint i = 0; ; i++)
+            {
+                if (!NativeMethods.SetupDiEnumDeviceInterfaces(
+                    deviceInfoSet,
+                    IntPtr.Zero,
+                    ref guid,
+                    i,
+                    ref deviceInterfaceData))
+                    break;
+
+                uint requiredSize = 0;
+
+                NativeMethods.SetupDiGetDeviceInterfaceDetail(
+                    deviceInfoSet,
+                    ref deviceInterfaceData,
+                    IntPtr.Zero,
+                    0,
+                    ref requiredSize,
+                    IntPtr.Zero);
+
+                var detailDataBuffer = Marshal.AllocHGlobal((int)requiredSize);
+
+                try
+                {
+                    var cbSize = IntPtr.Size == 8 ? 8 : 5;
+                    Marshal.WriteInt32(detailDataBuffer, cbSize);
+
+                    if (!NativeMethods.SetupDiGetDeviceInterfaceDetail(
+                        deviceInfoSet,
+                        ref deviceInterfaceData,
+                        detailDataBuffer,
+                        requiredSize,
+                        ref requiredSize,
+                        IntPtr.Zero))
+                    {
+                        continue;
+                    }
+
+                    var pDevicePath = detailDataBuffer + 4;
+                    var devicePath = Marshal.PtrToStringAnsi(pDevicePath);
+                    if (!string.IsNullOrEmpty(devicePath))
+                    {
+                        if (TryExtractVidPid(devicePath, out var vid, out var pid))
+                        {
+                            devices.Add(new WinUsbDevice()
+                            {
+                                VendorId = vid,
+                                ProductId = pid,
+                            });
+                        }
+                    }
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(detailDataBuffer);
+                }
+            }
+        }
+        finally
+        {
+            NativeMethods.SetupDiDestroyDeviceInfoList(deviceInfoSet);
+        }
+
+        return devices;
     }
 
     private static bool TryExtractVidPid(string deviceId, out ushort vid, out ushort pid)

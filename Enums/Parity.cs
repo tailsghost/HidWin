@@ -1,6 +1,6 @@
 ﻿namespace HidWin.Enums;
 
-internal enum Parity : byte
+public enum Parity : byte
 {
     NOPARITY = 0,
     ODDPARITY = 1,

@@ -274,7 +274,7 @@ public sealed class HidStream : DeviceStream
 
     private void HandleRelease()
     {
-        if (0 == Interlocked.Decrement(ref _refCount)) return;
+        if (0 != Interlocked.Decrement(ref _refCount)) return;
 
         HandleFree();
     }

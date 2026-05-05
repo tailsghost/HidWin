@@ -3,6 +3,7 @@
 public enum DeviceKind
 {
     Serial,
-    Hid
+    Hid,
+    WinUsb
 }
 

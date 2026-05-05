@@ -1,6 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
-  <PropertyGroup>
+  <!--<PropertyGroup>
 	  <TargetFrameworks>net6.0-windows;net7.0-windows;net8.0-windows;net9.0-windows;net10.0-windows;</TargetFrameworks>
 	  <ImplicitUsings>enable</ImplicitUsings>
 	  <Nullable>enable</Nullable>
@@ -17,6 +17,26 @@
 	  <DebugSymbols>false</DebugSymbols>
 	  <TieredCompilation>true</TieredCompilation>
 	  <DefineConstants>TRACE</DefineConstants>
+  </PropertyGroup>-->
+
+  <PropertyGroup>
+	  <TargetFrameworks>net10.0-windows</TargetFrameworks>
+
+	  <ImplicitUsings>enable</ImplicitUsings>
+	  <Nullable>enable</Nullable>
+	  <Optimize>false</Optimize>
+	  <DebugType>portable</DebugType>
+	  <DebugSymbols>true</DebugSymbols>
+
+	  <PublishTrimmed>false</PublishTrimmed>
+	  <PublishReadyToRun>false</PublishReadyToRun>
+	  <TieredCompilation>false</TieredCompilation>
+
+	  <Deterministic>true</Deterministic>
+	  <GenerateDocumentationFile>false</GenerateDocumentationFile>
+	  <EnableDynamicLoading>true</EnableDynamicLoading>
+
+	  <DefineConstants>DEBUG;TRACE</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>

@@ -49,6 +49,47 @@ public static class NativeMethods
     }
 
     [StructLayout(LayoutKind.Sequential)]
+    public struct USB_INTERFACE_DESCRIPTOR
+    {
+        public byte bLength;
+        public byte bDescriptorType;
+        public byte bInterfaceNumber;
+        public byte bAlternateSetting;
+        public byte bNumEndpoints;
+        public byte bInterfaceClass;
+        public byte bInterfaceSubClass;
+        public byte bInterfaceProtocol;
+        public byte iInterface;
+    }
+
+    public enum USBD_PIPE_TYPE : int
+    {
+        UsbdPipeTypeControl,
+        UsbdPipeTypeIsochronous,
+        UsbdPipeTypeBulk,
+        UsbdPipeTypeInterrupt
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct WINUSB_PIPE_INFORMATION
+    {
+        public USBD_PIPE_TYPE PipeType;
+        public byte PipeId;
+        public ushort MaximumPacketSize;
+        public byte Interval;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    struct OVERLAPPED
+    {
+        public IntPtr Internal;
+        public IntPtr InternalHigh;
+        public uint Offset;
+        public uint OffsetHigh;
+        public IntPtr hEvent;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
     public struct SP_DEVICE_INTERFACE_DATA
     {
         public int cbSize;
@@ -243,6 +284,10 @@ public static class NativeMethods
         uint dwFlagsAndAttributes,
         IntPtr hTemplateFile);
 
+    [DllImport("winusb.dll", SetLastError = true)]
+    public static extern bool WinUsb_Free(
+        IntPtr InterfaceHandle);
+
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool ReadFile(
@@ -317,6 +362,9 @@ public static class NativeMethods
     internal static extern IntPtr SetupDiGetClassDevs(ref Guid ClassGuid, string Enumerator, IntPtr hwndParent,
         int flags);
 
+    [DllImport("setupapi.dll", SetLastError = true)]
+    public static extern IntPtr SetupDiGetClassDevs(ref Guid ClassGuid, IntPtr Enumerator, IntPtr hwndParent, uint Flags);
+
     [DllImport("setupapi.dll", CharSet = CharSet.Auto, SetLastError = true)]
     internal static extern bool SetupDiGetDeviceRegistryProperty(
         IntPtr DeviceInfoSet, ref SP_DEVINFO_DATA DeviceInfoData, uint Property,
@@ -331,7 +379,9 @@ public static class NativeMethods
 
     [DllImport("setupapi.dll", SetLastError = true, CharSet = CharSet.Auto)]
     internal static extern bool SetupDiEnumDeviceInterfaces(IntPtr hDevInfo, IntPtr devInfo, ref Guid interfaceGuid,
-        uint memberIndex, out SP_DEVICE_INTERFACE_DATA deviceInterfaceData);
+        uint memberIndex, ref SP_DEVICE_INTERFACE_DATA deviceInterfaceData);
+
+
 
     [DllImport("setupapi.dll", SetLastError = true)]
     public static extern IntPtr SetupDiOpenDevRegKey(IntPtr deviceInfoSet,
@@ -351,6 +401,9 @@ public static class NativeMethods
     internal static extern bool SetupDiGetDeviceInterfaceDetail(IntPtr hDevInfo,
         ref SP_DEVICE_INTERFACE_DATA deviceInterfaceData, IntPtr deviceInterfaceDetailData,
         int deviceInterfaceDetailSize, out int requiredSize, IntPtr deviceInfoData);
+
+    [DllImport("setupapi.dll", SetLastError = true)]
+    public static extern bool SetupDiGetDeviceInterfaceDetail(IntPtr DeviceInfoSet, ref SP_DEVICE_INTERFACE_DATA DeviceInterfaceData, IntPtr DeviceInterfaceDetailData, uint DeviceInterfaceDetailDataSize, ref uint RequiredSize, IntPtr DeviceInfoData);
 
     [DllImport("setupapi.dll", SetLastError = true)]
     internal static extern bool SetupDiDestroyDeviceInfoList(IntPtr deviceInfoSet);
@@ -389,6 +442,7 @@ public static class NativeMethods
         [MarshalAs(UnmanagedType.LPStruct)] Guid interfaceClassGuid, int memberIndex,
         ref SP_DEVICE_INTERFACE_DATA deviceInterfaceData);
 
+
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     internal static extern bool GetVolumeInformation(
         string rootPathName,
@@ -417,6 +471,37 @@ public static class NativeMethods
     {
         return eventTimeout < 0 ? ~(uint)0 : (uint)eventTimeout;
     }
+
+    [DllImport("winusb.dll", SetLastError = true)]
+    public static extern bool WinUsb_WritePipe(
+        IntPtr InterfaceHandle,
+        byte PipeID,
+        byte[] Buffer,
+        int BufferLength,
+        out int LengthTransferred,
+        IntPtr Overlapped);
+
+    [DllImport("winusb.dll", SetLastError = true)]
+    public static extern bool WinUsb_ReadPipe(
+        IntPtr InterfaceHandle,
+        byte PipeID,
+        byte[] Buffer,
+        int BufferLength,
+        out int LengthTransferred,
+        IntPtr Overlapped);
+
+    [DllImport("winusb.dll", SetLastError = true)]
+    public static extern bool WinUsb_QueryInterfaceSettings(
+        IntPtr InterfaceHandle,
+        byte AlternateSettingNumber,
+        out USB_INTERFACE_DESCRIPTOR UsbAltInterfaceDescriptor);
+
+    [DllImport("winusb.dll", SetLastError = true)]
+    public static extern bool WinUsb_QueryPipe(
+        IntPtr InterfaceHandle,
+        byte AlternateSettingNumber,
+        byte PipeIndex,
+        out WINUSB_PIPE_INFORMATION PipeInformation);
 
     public static IntPtr CreateFileFromDevice(string filename, FileAccessMode desiredAccess, FileShareMode shareMode)
     {
@@ -544,7 +629,7 @@ public static class NativeMethods
                 return null;
             }
 
-            var pDevicePath = IntPtr.Add(detailDataBuffer, 4); 
+            var pDevicePath = IntPtr.Add(detailDataBuffer, 4);
             var devicePath = Marshal.PtrToStringAuto(pDevicePath);
 
             return devicePath;
@@ -583,7 +668,7 @@ public static class NativeMethods
 
     public static int CM_Get_Device_ID(uint devInst, out string deviceID)
     {
-        int ret; 
+        int ret;
         deviceID = string.Empty;
 
         ret = CM_Get_Device_ID_Size(out var length, devInst);
