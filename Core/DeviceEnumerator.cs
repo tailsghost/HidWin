@@ -16,7 +16,7 @@ public static class DeviceEnumerator
             {
                 DeviceKind.Hid => GetHidDevices(),
                 DeviceKind.Serial => GetSerialDevices(),
-                DeviceKind.WinUsb => GetDevicePathByGuid(guid),
+                DeviceKind.WinUsb => GetDevicePathByGuid(guid.Value),
                 _ => new List<Device>()
             };
 
