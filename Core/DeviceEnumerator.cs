@@ -2,8 +2,8 @@
 using HidWin.Enums;
 using HidWin.Natives;
 using System.ComponentModel;
-using System.Runtime.InteropServices;
 using System.Text;
+using static System.Runtime.InteropServices.Marshal;
 
 namespace HidWin.Core;
 
@@ -68,51 +68,38 @@ public static class DeviceEnumerator
         return list;
     }
 
-    private static List<Device> GetDevicePathByGuid(Guid guid)
+    private static List<Device> GetDevicePathByGuid(Guid interfaceGuid)
     {
         var deviceInfoSet = NativeMethods.SetupDiGetClassDevs(
-            ref guid,
-            IntPtr.Zero,
-            IntPtr.Zero,
-            0x00000002 | 0x00000010);
+            ref interfaceGuid, IntPtr.Zero, IntPtr.Zero,
+            (int)(DeviceInfoFlags.DIGCF_PRESENT | DeviceInfoFlags.DIGCF_DEVICEINTERFACE));
 
         if (deviceInfoSet == (IntPtr)(-1))
             return [];
 
-        var devices = new List<Device>();
+        var list = new List<Device>();
+
         try
         {
             var deviceInterfaceData = new NativeMethods.SP_DEVICE_INTERFACE_DATA
             {
-                cbSize = Marshal.SizeOf(typeof(NativeMethods.SP_DEVICE_INTERFACE_DATA))
+                cbSize = SizeOf(typeof(NativeMethods.SP_DEVICE_INTERFACE_DATA))
             };
 
             for (uint i = 0; ; i++)
             {
-                if (!NativeMethods.SetupDiEnumDeviceInterfaces(
-                    deviceInfoSet,
-                    IntPtr.Zero,
-                    ref guid,
-                    i,
-                    ref deviceInterfaceData))
+                if (!NativeMethods.SetupDiEnumDeviceInterfaces(deviceInfoSet, IntPtr.Zero, ref interfaceGuid, i, ref deviceInterfaceData))
                     break;
 
                 uint requiredSize = 0;
+                NativeMethods.SetupDiGetDeviceInterfaceDetail(deviceInfoSet, ref deviceInterfaceData, IntPtr.Zero, 0, ref requiredSize, IntPtr.Zero);
 
-                NativeMethods.SetupDiGetDeviceInterfaceDetail(
-                    deviceInfoSet,
-                    ref deviceInterfaceData,
-                    IntPtr.Zero,
-                    0,
-                    ref requiredSize,
-                    IntPtr.Zero);
-
-                var detailDataBuffer = Marshal.AllocHGlobal((int)requiredSize);
+                var detailDataBuffer = AllocHGlobal((int)requiredSize);
 
                 try
                 {
                     var cbSize = IntPtr.Size == 8 ? 8 : 5;
-                    Marshal.WriteInt32(detailDataBuffer, cbSize);
+                    WriteInt32(detailDataBuffer, cbSize);
 
                     if (!NativeMethods.SetupDiGetDeviceInterfaceDetail(
                         deviceInfoSet,
@@ -122,22 +109,24 @@ public static class DeviceEnumerator
                         ref requiredSize,
                         IntPtr.Zero))
                     {
-                        continue;
+                        throw new Exception("SetupDiGetDeviceInterfaceDetail failed: " + GetLastWin32Error());
                     }
 
                     var pDevicePath = detailDataBuffer + 4;
-                    var devicePath = Marshal.PtrToStringAnsi(pDevicePath);
+
+                    var devicePath = PtrToStringAnsi(pDevicePath);
                     if (!string.IsNullOrEmpty(devicePath))
                     {
-                        devices.Add(new WinUsbDevice()
+                        list.Add(new WinUsbDevice()
                         {
                             DevicePath = devicePath
                         });
                     }
+
                 }
                 finally
                 {
-                    Marshal.FreeHGlobal(detailDataBuffer);
+                    FreeHGlobal(detailDataBuffer);
                 }
             }
         }
@@ -145,8 +134,7 @@ public static class DeviceEnumerator
         {
             NativeMethods.SetupDiDestroyDeviceInfoList(deviceInfoSet);
         }
-
-        return devices;
+        return [];
     }
 
     private static bool TryExtractVidPid(string deviceId, out ushort vid, out ushort pid)
