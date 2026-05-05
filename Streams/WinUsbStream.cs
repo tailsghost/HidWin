@@ -25,6 +25,8 @@ public class WinUsbStream : DeviceStream
         CloseEventHandle = NativeMethods.CreateResetEventOrThrow(true);
 
         Throw.Handle.Invalid(Handle, "Unable to open COM class device (" + port + ").");
+        if (!NativeMethods.WinUsb_Initialize(Handle, out IntPtr handle))
+            throw new Exception("WinUsb_Initialize failed");
         QueryPipes();
         if (NativeMethods.SetCommTimeouts(Handle, out _)) return;
         var hr = Marshal.GetHRForLastWin32Error();

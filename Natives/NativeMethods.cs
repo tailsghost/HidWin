@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
+using Microsoft.Win32.SafeHandles;
 
 namespace HidWin.Natives;
 
@@ -361,6 +362,11 @@ public static class NativeMethods
     [DllImport("setupapi.dll", SetLastError = true, CharSet = CharSet.Auto)]
     internal static extern IntPtr SetupDiGetClassDevs(ref Guid ClassGuid, string Enumerator, IntPtr hwndParent,
         int flags);
+
+    [DllImport("winusb.dll", SetLastError = true)]
+    public static extern bool WinUsb_Initialize(
+        IntPtr DeviceHandle,
+        out IntPtr InterfaceHandle);
 
     [DllImport("setupapi.dll", SetLastError = true)]
     public static extern IntPtr SetupDiGetClassDevs(ref Guid ClassGuid, IntPtr Enumerator, IntPtr hwndParent, uint Flags);
