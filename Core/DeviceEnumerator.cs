@@ -9,14 +9,14 @@ namespace HidWin.Core;
 
 public static class DeviceEnumerator
 {
-    public static List<Device> GetDevices(DeviceKind? kind = null)
+    public static List<Device> GetDevices(DeviceKind? kind = null, Guid? guid = null)
     {
         if (kind != null)
             return kind switch
             {
                 DeviceKind.Hid => GetHidDevices(),
                 DeviceKind.Serial => GetSerialDevices(),
-                DeviceKind.WinUsb => GetDevicePathByGuid(),
+                DeviceKind.WinUsb => GetDevicePathByGuid(guid),
                 _ => new List<Device>()
             };
 
@@ -68,9 +68,8 @@ public static class DeviceEnumerator
         return list;
     }
 
-    private static List<Device> GetDevicePathByGuid()
+    private static List<Device> GetDevicePathByGuid(Guid guid)
     {
-        var guid = new Guid("4d1e55b2-f16f-11cf-88cb-001111000030");
         var deviceInfoSet = NativeMethods.SetupDiGetClassDevs(
             ref guid,
             IntPtr.Zero,
@@ -130,15 +129,10 @@ public static class DeviceEnumerator
                     var devicePath = Marshal.PtrToStringAnsi(pDevicePath);
                     if (!string.IsNullOrEmpty(devicePath))
                     {
-                        if (TryExtractVidPid(devicePath, out var vid, out var pid))
+                        devices.Add(new WinUsbDevice()
                         {
-                            devices.Add(new WinUsbDevice()
-                            {
-                                VendorId = vid,
-                                ProductId = pid,
-                                DevicePath = devicePath
-                            });
-                        }
+                            DevicePath = devicePath
+                        });
                     }
                 }
                 finally
