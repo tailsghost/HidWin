@@ -136,6 +136,7 @@ public static class DeviceEnumerator
                             {
                                 VendorId = vid,
                                 ProductId = pid,
+                                DevicePath = devicePath
                             });
                         }
                     }
