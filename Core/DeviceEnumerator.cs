@@ -134,7 +134,7 @@ public static class DeviceEnumerator
         {
             NativeMethods.SetupDiDestroyDeviceInfoList(deviceInfoSet);
         }
-        return [];
+        return list;
     }
 
     private static bool TryExtractVidPid(string deviceId, out ushort vid, out ushort pid)
