@@ -16,7 +16,8 @@ public class WinUsbStream : DeviceStream
         {
             if(field == value)
                 return;
-
+            if (WinUsbHandle == IntPtr.Zero)
+                return;
             field = value;
             SetReadTimeout(WinUsbHandle, InPipeId, (uint)field);
         }
@@ -29,7 +30,8 @@ public class WinUsbStream : DeviceStream
         {
             if (field == value)
                 return;
-
+            if (WinUsbHandle == IntPtr.Zero)
+                return;
             field = value;
             SetReadTimeout(WinUsbHandle, OutPipeId, (uint)field);
         }
