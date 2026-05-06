@@ -167,8 +167,6 @@ public class WinUsbStream : DeviceStream
     protected override void Dispose(bool disposing)
     {
         SetEvent(CloseEventHandle);
-        if (Handle != IntPtr.Zero)
-            WinUsb_Free(Handle);
         if (WinUsbHandle != IntPtr.Zero)
             WinUsb_Free(WinUsbHandle);
         base.Dispose(disposing);
