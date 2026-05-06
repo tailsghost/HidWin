@@ -58,6 +58,8 @@ public class WinUsbStream : DeviceStream
             throw new Exception("WinUsb_Initialize failed");
         WinUsbHandle = handle;
         QueryPipes();
+        ReadTimeout = 3000;
+        WriteTimeout = 3000;
     }
 
     private void SetReadTimeout(IntPtr handle, byte pipeId, uint timeoutMs)
