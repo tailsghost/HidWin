@@ -368,6 +368,15 @@ public static class NativeMethods
         IntPtr DeviceHandle,
         out IntPtr InterfaceHandle);
 
+    [DllImport("winusb.dll", SetLastError = true)]
+    public static extern bool WinUsb_SetPipePolicy(
+        IntPtr InterfaceHandle,
+        byte PipeID,
+        uint PolicyType,
+        uint ValueLength,
+        ref uint Value);
+
+
     [DllImport("setupapi.dll", SetLastError = true)]
     public static extern IntPtr SetupDiGetClassDevs(ref Guid ClassGuid, IntPtr Enumerator, IntPtr hwndParent, uint Flags);
 

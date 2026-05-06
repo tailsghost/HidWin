@@ -8,7 +8,32 @@ namespace HidWin.Streams;
 
 public class WinUsbStream : DeviceStream
 {
+    private const uint PIPE_TRANSFER_TIMEOUT = 0x03;
+    public override int ReadTimeout
+    {
+        get => field;
+        set
+        {
+            if(field == value)
+                return;
 
+            field = value;
+            SetReadTimeout(WinUsbHandle, InPipeId, (uint)field);
+        }
+    }
+
+    public override int WriteTimeout
+    {
+        get => field;
+        set
+        {
+            if (field == value)
+                return;
+
+            field = value;
+            SetReadTimeout(WinUsbHandle, OutPipeId, (uint)field);
+        }
+    }
     private byte InPipeId { get; set; }
     private byte OutPipeId { get; set; }
 
@@ -33,9 +58,24 @@ public class WinUsbStream : DeviceStream
         QueryPipes();
     }
 
+    private void SetReadTimeout(IntPtr handle, byte pipeId, uint timeoutMs)
+    {
+        uint value = timeoutMs;
+
+        if (!WinUsb_SetPipePolicy(
+                handle,
+                pipeId,
+                PIPE_TRANSFER_TIMEOUT,
+                sizeof(uint),
+                ref value))
+        {
+            throw new System.ComponentModel.Win32Exception();
+        }
+    }
+
     private void QueryPipes()
     {
-        NativeMethods.USB_INTERFACE_DESCRIPTOR desc;
+        USB_INTERFACE_DESCRIPTOR desc;
 
         if (!NativeMethods.WinUsb_QueryInterfaceSettings(
                 WinUsbHandle,
@@ -52,9 +92,9 @@ public class WinUsbStream : DeviceStream
 
         for (byte i = 0; i < desc.bNumEndpoints; i++)
         {
-            NativeMethods.WINUSB_PIPE_INFORMATION pipe;
+            WINUSB_PIPE_INFORMATION pipe;
 
-            if (!NativeMethods.WinUsb_QueryPipe(
+            if (!WinUsb_QueryPipe(
                     WinUsbHandle,
                     0,
                     i,
@@ -87,7 +127,7 @@ public class WinUsbStream : DeviceStream
 
     public override int Read(byte[] buffer, int offset, int count)
     {
-        return !NativeMethods.WinUsb_ReadPipe(
+        return !WinUsb_ReadPipe(
             WinUsbHandle,
             InPipeId,
             buffer,
@@ -98,7 +138,7 @@ public class WinUsbStream : DeviceStream
 
     public override void Write(byte[] buffer, int offset, int count)
     {
-        if (!NativeMethods.WinUsb_WritePipe(
+        if (!WinUsb_WritePipe(
                 WinUsbHandle,
                 OutPipeId,
                 buffer,
@@ -122,11 +162,11 @@ public class WinUsbStream : DeviceStream
 
     protected override void Dispose(bool disposing)
     {
-        NativeMethods.SetEvent(CloseEventHandle);
+        SetEvent(CloseEventHandle);
         if (Handle != IntPtr.Zero)
-            NativeMethods.WinUsb_Free(Handle);
+            WinUsb_Free(Handle);
         if (WinUsbHandle != IntPtr.Zero)
-            NativeMethods.WinUsb_Free(WinUsbHandle);
+            WinUsb_Free(WinUsbHandle);
         base.Dispose(disposing);
     }
 }
