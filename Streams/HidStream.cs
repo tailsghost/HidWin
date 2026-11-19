@@ -2,6 +2,7 @@
 using HidWin.Exceptions;
 using HidWin.Natives;
 using System.ComponentModel;
+using System.IO;
 using System.Runtime.InteropServices;
 
 namespace HidWin.Streams;

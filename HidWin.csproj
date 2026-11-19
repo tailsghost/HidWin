@@ -1,43 +1,13 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
-  <!--<PropertyGroup>
-	  <TargetFrameworks>net6.0-windows;net7.0-windows;net8.0-windows;net9.0-windows;net10.0-windows;</TargetFrameworks>
-	  <ImplicitUsings>enable</ImplicitUsings>
-	  <Nullable>enable</Nullable>
-	  <Optimize>true</Optimize>
-	  <Deterministic>true</Deterministic>
-	  <ProduceReferenceAssembly>true</ProduceReferenceAssembly>
-	  <GenerateDocumentationFile>true</GenerateDocumentationFile>
-	  <IsTrimmable>true</IsTrimmable>
-	  <EnableDynamicLoading>false</EnableDynamicLoading>
-	  <PublishTrimmed>true</PublishTrimmed>
-	  <TrimMode>link</TrimMode>
-	  <PublishReadyToRun>true</PublishReadyToRun>
-	  <DebugType>none</DebugType>
-	  <DebugSymbols>false</DebugSymbols>
-	  <TieredCompilation>true</TieredCompilation>
-	  <DefineConstants>TRACE</DefineConstants>
-  </PropertyGroup>-->
 
-  <PropertyGroup>
-	  <TargetFramework>net10.0-windows</TargetFramework>
-
-	  <ImplicitUsings>enable</ImplicitUsings>
-	  <Nullable>enable</Nullable>
-	  <Optimize>false</Optimize>
-	  <DebugType>portable</DebugType>
-	  <DebugSymbols>true</DebugSymbols>
-
-	  <PublishTrimmed>false</PublishTrimmed>
-	  <PublishReadyToRun>false</PublishReadyToRun>
-	  <TieredCompilation>false</TieredCompilation>
-
-	  <Deterministic>true</Deterministic>
-	  <GenerateDocumentationFile>false</GenerateDocumentationFile>
-	  <EnableDynamicLoading>true</EnableDynamicLoading>
-
-	  <DefineConstants>DEBUG;TRACE</DefineConstants>
-  </PropertyGroup>
+	<PropertyGroup>
+		<TargetFramework>net10.0-windows</TargetFramework>
+		<Nullable>enable</Nullable>
+		<GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+		<UseWPF>true</UseWPF>
+		<ImplicitUsings>enable</ImplicitUsings>
+	</PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="DeviceListenerChanged" Version="1.0.4" />

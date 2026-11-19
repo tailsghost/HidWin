@@ -1,5 +1,6 @@
 ﻿using HidWin.Core;
 using HidWin.Natives;
+using System.IO;
 using System.Runtime.InteropServices;
 
 namespace HidWin.Streams;

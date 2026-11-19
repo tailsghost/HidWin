@@ -3,6 +3,7 @@ using HidWin.Enums;
 using HidWin.Exceptions;
 using HidWin.Natives;
 using System.Runtime.InteropServices;
+using System.IO;
 
 namespace HidWin.Streams;
 

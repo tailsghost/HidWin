@@ -2,6 +2,7 @@
 using HidWin.Exceptions;
 using HidWin.Natives;
 using HidWin.Streams;
+using System.IO;
 
 namespace HidWin.Devices;
 
